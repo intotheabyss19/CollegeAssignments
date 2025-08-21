@@ -1,0 +1,74 @@
+/*
+Write a function called get_node_count to count the number of nodes in a singly linked list.
+get_node_count will take only one parameter which is a pointer to the first node of a linked list L, and will
+return the number of nodes in L. Take a linked list L as input from the user, call get_node_count from your
+main function with the first node of L as the argument, and then print the number of nodes in L as the final
+output of your program.
+*/
+
+#include <stdio.h>
+#include <stdlib.h>
+
+// Definition of a node in the singly linked list
+struct Node {
+    int data;
+    struct Node *next;
+};
+
+// Function to count the number of nodes in a linked list
+int get_node_count(struct Node *head) {
+    int count = 0;
+    struct Node *current = head;
+    
+    while (current != NULL) {
+        count++;
+        current = current->next;
+    }
+    
+    return count;
+}
+
+// Function to create a new node
+struct Node* create_node(int data) {
+    struct Node *newNode = (struct Node*) malloc(sizeof(struct Node));
+    if (newNode == NULL) {
+        printf("Memory allocation failed!\n");
+        exit(1);
+    }
+    newNode->data = data;
+    newNode->next = NULL;
+    return newNode;
+}
+
+int main() {
+    printf("Enter the elements of the linked list separated by spaces (enter -1 to terminate): ");
+    
+    struct Node *head = NULL;
+    struct Node *current = NULL;
+    
+    int value;
+    while (scanf("%d", &value) == 1 && value != -1) {
+        struct Node *newNode = create_node(value);
+        if (head == NULL) {
+            head = newNode;
+            current = head;
+        } else {
+            current->next = newNode;
+            current = current->next;
+        }
+    }
+
+    int count = get_node_count(head);
+
+    // Print the number of nodes in the linked list
+    printf("Number of nodes in the linked list: %d\n", count);
+
+    current = head;
+    while (current != NULL) {
+        struct Node *temp = current;
+        current = current->next;
+        free(temp);
+    }
+
+    return 0;
+}

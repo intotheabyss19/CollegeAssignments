@@ -1,0 +1,170 @@
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+
+
+public class tictactoe {
+  public static void main(String[] args) {
+    gameGUI gui = new gameGUI();
+  }
+}
+
+class GameLogic {
+  private char[][] gameGrid;
+  private char currentSymbol;
+
+  public GameLogic() {
+    gameGrid = new char[3][3];
+    currentSymbol = 'X';
+    initializeBoard();
+  }
+
+  private void initializeBoard() {
+    for (int i = 0; i < 3; i++)
+      for (int j = 0; j < 3; j++)
+        gameGrid[i][j] = '-';
+  }
+
+  public boolean move(int row, int col) {
+    if (row < 0 || row > 3 || col < 0 || col > 3 || gameGrid[row][col] != '-')
+      return false;
+
+    gameGrid[row][col] = currentSymbol;
+    return true;
+  }
+
+  public boolean checkWin() {
+    boolean win = false;
+
+    // win logic for '|||' columns
+    for (int i = 0; i < 3; i++) {
+      win = true;
+      for (int j = 0; j < 3; j++) {
+        if (gameGrid[j][i] != currentSymbol) {
+          win = false;
+          break;
+        }
+      }
+      if (win) return true;
+    }
+
+    // win logic for '---' rows
+    for (int i = 0; i < 3; i++) {
+      win = true;
+      for (int j = 0; j < 3; j++) {
+        if (gameGrid[j][i] != currentSymbol) {
+          win = false;
+          break;
+        }
+      }
+      if (win) return true;
+    }
+
+    // win logic for '\' diagonal
+    for (int i = 0; i < 3; i++) { 
+      if (gameGrid[i][i] != currentSymbol) {
+        win = false;
+        break;
+      }
+    } if (win) return true;
+
+    // win logic for '/' diagonal
+    for (int i = 0; i < 3; i++) { 
+      if (gameGrid[2-i][2-i] != currentSymbol) {
+        win = false;
+        break;
+      }
+    } if (win) return true;
+
+    return false;
+  }
+
+  public boolean isGameGridFull() {
+    for (int i = 0; i < 3; i++)
+      for (int j = 0; j < 3; j++)
+        if (gameGrid[i][j] == '-')
+          return false;
+
+    return true;
+  }
+
+  public char getCurrentPlayer() {
+    return currentSymbol;
+  }
+
+  public void resetGame() {
+    initializeBoard();
+    currentSymbol = 'X';
+  }
+}
+
+class gameGUI {
+  private JFrame gameFrame;
+  private JButton[][] Cells;
+  private JLabel statusLabel;
+  private GameLogic Game;
+
+  public gameGUI() {
+    Game = new GameLogic();
+    createGUI();
+  }
+
+  private void createGUI() {
+    gameFrame = new JFrame("TIC-TAC-TOE");
+    gameFrame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+    gameFrame.setSize(800, 800);
+    gameFrame.setLocationRelativeTo(null);
+
+    JPanel gamePanel = new JPanel(new GridLayout(3, 3));
+    Cells = new JButton[3][3];
+
+    for (int i = 0; i < 3; i++) {
+      for (int j = 0; j < 3; j++) {
+        Cells[i][j] = new JButton("");
+        Cells[i][j].setFont(new Font("Arial", Font.PLAIN, 60));
+        Cells[i][j].addActionListener(new ButtonClickListener(i, j));
+        gamePanel.add(Cells[i][j]);
+      }
+    }
+
+    statusLabel = new JLabel("Player X's turn");
+
+    gameFrame.add(gamePanel, BorderLayout.CENTER);
+    gameFrame.add(statusLabel, BorderLayout.SOUTH);
+
+    gameFrame.setVisible(true);
+  }
+
+  private class ButtonClickListener implements ActionListener {
+    private int row, col;
+
+    public ButtonClickListener(int row, int col) {
+      this.row = row;
+      this.col = col;
+    }
+
+    @Override
+    public void actionPerformed(ActionEvent e) {
+      if (Game.move(row, col)) {
+        Cells[row][col].setText(String.valueOf(Game.getCurrentPlayer()));
+        if (Game.checkWin()) {
+          statusLabel.setText("Player " + Game.getCurrentPlayer() + " wins!");
+        } else if (Game.isGameGridFull()) {
+          statusLabel.setText("It's a draw!");
+        } else {
+          Game.switchPlayer();
+          statusLabel.setText("Player " + game.getCurrentPlayer() + "'s turn");
+        }
+      }
+    }
+  }
+
+  private void resetButtons() {
+    for (int i = 0; i < 3; i++) {
+      for (int j = 0; j < 3; j++) {
+        cells[i][j].setText("");
+      }
+    }
+  }
+}
