@@ -11,9 +11,8 @@
 
 int StringLen(char *pat) {
   int i = 0;
-  while (pat[i] != '\0') {
-    i++;
-  }
+  for (; pat[i] != '\0'; i++)
+    ;
   return i;
 }
 
@@ -25,7 +24,7 @@ void Naive(char *pat, char *txt) {
       if (txt[i + j] != pat[j])
         break;
     if (j == M)
-      printf("Pattern found at  index %d.\n", i);
+      printf("Pattern found at %d.\n", i);
   }
 }
 
@@ -39,7 +38,7 @@ void Modified_Naive(char *pat, char *txt) {
         if (txt[i + j] != pat[j])
           break;
       if (j == M)
-        printf("Pattern found  at index %d.\n", i);
+        printf("Pattern found at %d.\n", i);
       i = i + j;
     } else
       i++;
@@ -47,8 +46,8 @@ void Modified_Naive(char *pat, char *txt) {
 }
 
 int main() {
-  char txt[] = "BABCBAABABCAABAAABAACAADCCBBAABAAABABA";
-  char pat[] = "ABAB";
+  char txt[] = "BACABCBAABABCACABACABAABAACABADCCBBAABAAABABA";
+  char pat[] = "ACAB";
   printf("Running Naive String Matcher: \n");
   Naive(pat, txt);
   printf("\nRunning Modified Naive String Matcher: \n");
