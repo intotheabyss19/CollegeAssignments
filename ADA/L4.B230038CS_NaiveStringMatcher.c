@@ -9,6 +9,8 @@
 
 #include <stdio.h>
 
+#define MAX_STRING_LENGTH 1024
+
 int StringLen(char *pat) {
   int i = 0;
   for (; pat[i] != '\0'; i++)
@@ -46,8 +48,15 @@ void Modified_Naive(char *pat, char *txt) {
 }
 
 int main() {
-  char txt[] = "BACABCBAABABCACABACABAABAACABADCCBBAABAAABABA";
-  char pat[] = "ACAB";
+  char txt[MAX_STRING_LENGTH];
+  char pat[MAX_STRING_LENGTH];
+  int i = 0;
+
+  printf("Enter text: ");
+  scanf("%s", txt);
+  printf("Enter pattern: ");
+  scanf("%s", pat);
+
   printf("Running Naive String Matcher: \n");
   Naive(pat, txt);
   printf("\nRunning Modified Naive String Matcher: \n");
