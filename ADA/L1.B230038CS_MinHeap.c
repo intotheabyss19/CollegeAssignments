@@ -2,7 +2,7 @@
 #include <stdio.h>
 #define MAXHEAPSIZE 100
 #define HEAPSIZE A[0] // storing heapsize at 0th index of the array
-#define SWAP(t, x, y)                                                          \
+#define SWAP(x, y)                                                             \
   {                                                                            \
     x ^= y;                                                                    \
     y ^= x;                                                                    \
@@ -106,6 +106,7 @@ void MinHeapInsert(int *A, int key) {
   A[i] = key;
 
   while (i > 1 && A[Parent(i)] > A[i]) {
+    printHeap(A);
     SWAP(A[i], A[Parent(i)]);
     i = Parent(i);
   }
