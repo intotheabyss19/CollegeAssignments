@@ -1,0 +1,84 @@
+//notebook: 1, 5, 6, 8, 9, 10, 13, 19
+//source files: 5, 8, 10, 19, 20
+
+/*
+1. Write a program to create a singly linked list (a chain) and then display the odd numbers and the even
+numbers of the list in two separate lines. Create a linked list L containing n nodes, where each node contains
+one data item called key which stores an integer, by taking n and the values of key for each node of L as
+input from the user. Print all the key values of L in the correct order, from the first node to the last node, in
+the 1st line, all the odd key values of L in the 2nd line, and all the even key values of L in the 3rd line of the
+final output of your program. Display the output in the format given below.
+Sample Final Output
+Linked list: 20 → 14 → 15 → 35 → 25 → 56 → 98 → 45 → 17 → 40
+Odd values: 15, 35, 25, 45, 17
+Even values: 20, 14, 56, 98, 40
+*/
+
+#include <stdio.h>
+
+#define SIZE 10
+
+typedef struct node{
+  int key;
+  struct node *next;
+}Num;
+
+void display(Num *head)
+{
+  printf("displaying:\n");
+  Num *ii = head;
+  printf("Linked List:");
+  while (ii != NULL)
+  {
+    printf("-> %d", ii -> key);
+    ii = ii -> next;
+  }
+  printf("\n");
+}
+
+void displayOdd(Num *head)
+{
+  Num *ii = head;
+  printf("Odd Values:");
+  while (ii != NULL)
+  {
+    if (ii -> key % 2 != 0)
+      printf("-> %d", ii -> key);
+      ii = ii -> next;
+  }
+  printf("\n");
+}
+
+void displayEven(Num *head)
+{
+  Num *ii = head;
+  printf("Odd Values:");
+  while (ii != NULL)
+  {
+    if (ii -> key % 2 != 0)
+      printf("-> %d", ii -> key);
+      ii = ii -> next;
+  }
+  printf("\n");
+}
+
+int main()
+{
+  Num NumList[SIZE];
+  int n, i;
+
+  printf("Enter the number of items: ");
+  scanf("%d", &n);
+
+  printf("Enter the items: ");
+  for(i = 0; i < n; i++)
+  {
+    scanf("%d", &NumList[i].key);
+    NumList[i] -> next = NULL;
+  }
+
+  display(NumList);
+  displayOdd(NumList);
+  displayEven(NumList);
+  return 0;
+}
