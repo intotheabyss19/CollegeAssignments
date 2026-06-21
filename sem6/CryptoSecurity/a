@@ -1,0 +1,18 @@
+pos = (0, 0)
+pos_prev = p
+
+L, R, U, D = (-1, 0), (1, 0), (0, -1), (0, 1)
+dir = {1: (L, R), 2: (U, D), 3: (L, D), 4: (R, D), 5: (L, U), 6: (U, R)}
+
+while True:
+  pos_next = 
+
+grid = [[]]
+que = []
+while True:
+  q.popleft()
+
+1. add current value from dir to get new pos and reject previous value to get only one valid path
+2. if starting is 4 then 2 paths possible. otherwise one path only possible
+3. check if new pos's index + any of the two values return current pos value
+4. 

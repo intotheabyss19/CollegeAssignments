@@ -1,0 +1,9 @@
+# %% Cell 1
+from unittest.main import main
+from matplotlib import image as img
+from matplotlib import pyplot as plt
+
+# %% Cell 2
+img = img.imread("mountains.jpg")
+plt.imshow(img)
+plt.show()
