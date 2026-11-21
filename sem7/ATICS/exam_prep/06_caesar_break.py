@@ -16,20 +16,21 @@
    Encrypt:  C = (P + k) mod 26
    Decrypt:  P = (C - k) mod 26        (letters ko number maan ke: A=0 ... Z=25)
 
-   BREAK ("lock" tareeka - lab mein yahi dikhaya, sir ne OK kiya):
-     1. User ek word deta hai -> program use random key se LOCK (encrypt) karta hai.
-     2. Attacker ko sirf ciphertext dikhta hai. Woh k = 0, 1, 2, ... 25 try karta hai
-        (BRUTE FORCE - Caesar mein sirf 26 keys hain).
-     3. Har attempt: decrypt(C, k) ko original word se match karo.
-          match nahi  -> "Match didn't occur", agla k
-          match hua   -> "Success!", key = k, loop ROKO (break)
+   BREAK (lab mein yahi dikhaya, sir ne OK kiya):
+     1. User ek word deta hai -> caesar(word, key) se encrypt (key code mein fixed, jaise 3).
+     2. brute_force(): attacker ko sirf ciphertext dikhta hai. Woh k = 0, 1, 2, ... 25
+        try karta hai (Caesar mein sirf 26 keys hain; k = 26 wahi hai jo k = 0).
+     3. Har attempt pe check() function call hota hai: decrypted text ko original word
+        se compare karta hai aur print karta hai:
+          match nahi  -> "failed", agla k
+          match hua   -> "SUCCEEDED", key = k, brute force ROKO (return)
 
 >> Haath se chhota example
-   Word = "HELLO", random key = 3  ->  locked = "KHOOR"
-   k = 0 -> KHOOR   Match didn't occur
-   k = 1 -> JGNNQ   Match didn't occur
-   k = 2 -> IFMMP   Match didn't occur
-   k = 3 -> HELLO   Success! key = 3   (yahin ruk gaye)
+   Word = "HELLO", key = 3  ->  encrypted = "KHOOR"
+   Key  0: KHOOR -> failed
+   Key  1: JGNNQ -> failed
+   Key  2: IFMMP -> failed
+   Key  3: HELLO -> Brute force attempt SUCCEEDED   (yahin ruk gaye)
 
 >> Agar original word pata NA ho? (sirf ciphertext ho)
    Tab match karne ko kuch nahi hai -> FREQUENCY ANALYSIS:
@@ -58,8 +59,9 @@
    - Concept important hai: Vigenere (Exp 7) ka har column ek Caesar cipher hai.
 
 >> Exam trick (yaad rakhne ke liye)
-   "word lo -> random key se lock -> k = 0..25 try -> match pe Success + break"
-   shift(text, k) ek hi function: encrypt = shift(+k), decrypt = shift(-k).
+   "3 functions: caesar, check, brute_force"
+   caesar(text, k) ek hi function: encrypt = caesar(+k), decrypt = caesar(-k).
+   check = compare + print + True/False.  brute_force = loop 0..25, check True pe return k.
 
 >> Viva Questions
    Q1. Mono-alphabetic aur poly-alphabetic mein kya fark hai?
@@ -72,7 +74,8 @@
    Q4. Brute force attack kya hai?
        Ans: Har possible key try karna. Caesar mein sirf 26 -> turant toot jaata hai.
    Q5. Aapke program mein sahi key kaise pehchani?
-       Ans: Har attempt ko original word se compare kiya - match hote hi Success aur loop break.
+       Ans: Har attempt pe check() function original word se compare karta hai -
+            match hote hi "SUCCEEDED" print aur brute_force wahi key return kar deta hai.
             (Yeh "known-plaintext" check hai - attacker ko pata hai message kya ho sakta hai.)
    Q6. Agar original word pata na ho toh?
        Ans: Frequency analysis (chi-squared) - jo shift sabse English jaisa text de woh key.
@@ -100,19 +103,16 @@
 # file chalane pe do baar input na maange). Asli input() line comment mein hai.
 print("===== PART 1: Annotated version =====")
 
-# random module (built-in): random numbers ke liye.
-#   random.randint(a, b) -> a se b ke beech ka random integer, DONO ends included.
-#   randint(1, 25) -> 1..25 (0 nahi liya kyunki k = 0 matlab koi encryption hi nahi).
-import random
+# Koi import nahi chahiye - sab built-in string functions se ho jaata hai.
 
 # Alphabet string. A.index('D') = 3 -> letter ko number banata hai,
 # A[3] = 'D' -> number ko wapas letter banata hai.
 A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
 
-# --- shift(): encrypt aur decrypt dono -----------------------------------
+# --- caesar(): encrypt aur decrypt dono ----------------------------------
 # k positive -> encrypt (aage khiskao), k negative -> decrypt (peeche khiskao).
-def shift(text, k):
+def caesar(text, k):
     # Har character c ke liye:
     #   agar letter hai: A.index(c) se number (0..25), + k, % 26 (Z ke baad wapas A),
     #                    phir A[...] se wapas letter.  Example: 'Y' + 3 -> (24+3)%26 = 1 -> 'B'
@@ -122,32 +122,45 @@ def shift(text, k):
     return ''.join(A[(A.index(c) + k) % 26] if c in A else c for c in text)
 
 
-# word = input("Enter word to lock: ").upper()
+# --- check(): har attempt pe call hota hai ------------------------------
+# attempt = is key se decrypt karke jo mila, word = original, k = try ki gayi key.
+# Match pe "SUCCEEDED" print + True return, warna "failed" print + False return.
+# {k:2d} = number ko 2 jagah mein right-align (sirf output seedha dikhne ke liye).
+def check(attempt, word, k):
+    if attempt == word:
+        print(f"Key {k:2d}: {attempt} -> Brute force attempt SUCCEEDED")
+        return True
+    print(f"Key {k:2d}: {attempt} -> failed")
+    return False
+
+
+# --- brute_force(): saari keys try karo ---------------------------------
+def brute_force(cipher, word):
+    for k in range(26):                # range(26) = 0, 1, ..., 25 (k = 26 wahi hai jo 0)
+        # caesar(cipher, -k) = k maan ke decrypt, phir check() se result dekho.
+        if check(caesar(cipher, -k), word, k):
+            return k                   # return = function turant khatam -> aage ke k try nahi honge
+    return None                        # loop poora chala aur match nahi mila (Caesar mein hoga nahi)
+
+
+# word = input("Enter a word: ").upper()
 #   input() string deta hai. .upper() -> sab capital (A mein sirf capital letters hain,
 #   'hello' -> 'HELLO').
 word = "HELLO"
 
 # Edge case: agar word mein ek bhi letter nahi (empty, ya "123") toh Caesar kuch
-# change hi nahi karega -> k = 0 pe hi "match" ho jaayega. Isliye dobara maango.
+# change hi nahi karega -> key 0 pe hi "match" ho jaayega. Isliye dobara maango.
 #   any(...) -> agar koi bhi ek item True ho toh True. Yahan: "kya koi letter hai?"
-#   while ... : jab tak letter na mile, input maangte raho.
 while not any(c in A for c in word):
-    # word = input("Need at least one letter: ").upper()
+    # word = input("Enter at least one letter: ").upper()
     word = "HELLO"
 
-# LOCK: random key se encrypt. Attacker ko yeh key nahi pata.
-key = random.randint(1, 25)
-C = shift(word, key)
-print("Locked (ciphertext):", C)
+key = 3                                # key code mein fixed (example ke liye)
+cipher = caesar(word, key)             # ENCRYPT: har letter +3
+print("Encrypted:", cipher)
 
-# BREAK: brute force - har possible key k = 0..25 try karo.
-for k in range(26):                    # range(26) = 0, 1, ..., 25
-    attempt = shift(C, -k)             # k maan ke decrypt karo (peeche khiskao)
-    # {k:2d} = number ko 2 jagah mein right-align (sirf output seedha dikhne ke liye)
-    if attempt == word:                # original word se match? -> sahi key mil gayi
-        print(f"k = {k:2d}: {attempt} -> Success! Key found =", k)
-        break                          # break = loop turant band, aage ke k try nahi honge
-    print(f"k = {k:2d}: {attempt} -> Match didn't occur")
+found = brute_force(cipher, word)      # BREAK: 0 se try, match pe ruk jaata hai
+print("Key found:", found)
 
 
 # =====================================================================
@@ -155,26 +168,35 @@ for k in range(26):                    # range(26) = 0, 1, ..., 25
 # =====================================================================
 print("\n===== PART 2: Exam version =====")
 
-import random
-
 A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
 
-def shift(text, k):
+def caesar(text, k):
     return ''.join(A[(A.index(c) + k) % 26] if c in A else c for c in text)
 
 
-word = input("Enter word to lock: ").upper()
-while not any(c in A for c in word):
-    word = input("Need at least one letter: ").upper()
-
-key = random.randint(1, 25)
-C = shift(word, key)
-print("Locked (ciphertext):", C)
-
-for k in range(26):
-    attempt = shift(C, -k)
+def check(attempt, word, k):
     if attempt == word:
-        print(f"k = {k:2d}: {attempt} -> Success! Key found =", k)
-        break
-    print(f"k = {k:2d}: {attempt} -> Match didn't occur")
+        print(f"Key {k:2d}: {attempt} -> Brute force attempt SUCCEEDED")
+        return True
+    print(f"Key {k:2d}: {attempt} -> failed")
+    return False
+
+
+def brute_force(cipher, word):
+    for k in range(26):
+        if check(caesar(cipher, -k), word, k):
+            return k
+    return None
+
+
+word = input("Enter a word: ").upper()
+while not any(c in A for c in word):
+    word = input("Enter at least one letter: ").upper()
+
+key = 3
+cipher = caesar(word, key)
+print("Encrypted:", cipher)
+
+found = brute_force(cipher, word)
+print("Key found:", found)
