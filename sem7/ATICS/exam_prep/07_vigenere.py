@@ -117,13 +117,13 @@ FREQ = [8.2, 1.5, 2.8, 4.3, 12.7, 2.2, 2.0, 6.1, 7.0, 0.2, 0.8, 4.0, 2.4,
 # sign = 1 -> encrypt (key add karo), sign = -1 -> decrypt (key subtract karo).
 # sign=1 "default argument" hai: vigenere(t, k) likho toh encrypt, vigenere(t, k, -1) toh decrypt.
 def vigenere(text, key, sign=1):
-    # enumerate(text) -> har letter ke saath uska index deta hai: (0,'C'), (1,'R'), ...
-    #   i = position, c = letter.
-    # key[i % len(key)] -> key ko repeat karta hai: key "KEY", i = 4 -> key[1] = 'E'
-    # A.index(x) -> string mein x ki position (0-25). A.index('K') = 10
-    # % 26 -> wrap around (Z ke baad A). Python mein -3 % 26 = 23, toh negative bhi sahi.
-    # ''.join(...) -> saare letters ko ek string mein jod deta hai ('' = beech mein kuch nahi).
-    return ''.join(A[(A.index(c) + sign * A.index(key[i % len(key)])) % 26] for i, c in enumerate(text))
+    result = ''
+    for i in range(len(text)):          # i = position 0, 1, 2, ...
+        p = A.index(text[i])            # text ka letter -> number. A.index('K') = 10
+        k = A.index(key[i % len(key)])  # key repeat: key "KEY", i = 4 -> 4 % 3 = 1 -> key[1] = 'E'
+        # (p + k) % 26 -> wrap around (Z ke baad A). Python mein -3 % 26 = 23, toh decrypt bhi sahi.
+        result += A[(p + sign * k) % 26]
+    return result
 
 
 # --- Index of Coincidence (IC) ------------------------------------------
@@ -133,35 +133,46 @@ def vigenere(text, key, sign=1):
 # Caesar shift karne se IC nahi badalta (letters bas rename hote hain, counts same).
 def ic(s):
     N = len(s)
-    # s.count(c) -> string s mein letter c kitni baar aaya. "HELLO".count('L') = 2
-    # (Note: N = 0 ya 1 ho toh division by zero - isliye text lamba hona chahiye ~300+ letters)
-    return sum(s.count(c) * (s.count(c) - 1) for c in A) / (N * (N - 1))
+    total = 0
+    for ch in A:
+        f = s.count(ch)                 # s.count(ch) -> s mein ch kitni baar. "HELLO".count('L') = 2
+        total += f * (f - 1)
+    # (N = 0 ya 1 ho toh division by zero - isliye text lamba hona chahiye ~300+ letters)
+    return total / (N * (N - 1))
 
 
 # --- Key length estimation ----------------------------------------------
 def key_length(c):
-    # Har possible key length m = 1..12 try karo (range(1, 13) -> 1 se 12, 13 exclude).
-    # c[i::m] -> SLICING [start:stop:step] -> index i se shuru, har m-th letter.
-    #   "ABCDEFG"[1::3] = "BE"  (index 1, 4 - step 3)
-    #   Agar m sahi key length hai, toh har column ek hi key letter se shift hua ->
-    #   har column simple Caesar cipher -> uska IC English jaisa (~0.066).
-    # Har m ke liye saare columns ka average IC -> ics list (12 values).
-    ics = [sum(ic(c[i::m]) for i in range(m)) / m for m in range(1, 13)]
-    # Problem: agar key length 3 hai toh 6, 9, 12 pe bhi columns pure hote hain
-    # (multiples bhi high IC) -> sirf max() lena galat answer de sakta hai.
+    avg_ics = []                        # avg_ics[0] = m=1 ka IC, avg_ics[1] = m=2 ka IC, ...
+    for m in range(1, 13):              # try key length 1 se 12 (13 exclude)
+        total = 0
+        for i in range(m):
+            # c[i::m] -> SLICING [start:stop:step]: index i se shuru, har m-th letter = i-th column.
+            #   "ABCDEFG"[1::3] = "BE"  (index 1, 4)
+            # Agar m sahi hai, har column ek hi key letter se shift hua -> simple Caesar
+            # -> uska IC English jaisa (~0.066).
+            total += ic(c[i::m])
+        avg_ics.append(total / m)       # saare columns ka average IC
+    best = max(avg_ics)                 # max(list) -> sabse bada value
+    # Problem: key length 3 ho toh 6, 9, 12 pe bhi columns pure Caesar hote hain
+    # (multiples bhi high IC) -> sirf max lena galat ho sakta hai.
     # Rule: SABSE CHHOTA m jiska IC best ke 90% ke upar hai.
-    # enumerate(ics, 1) -> counting 1 se shuru (default 0 hota hai): (1, ic1), (2, ic2) ...
-    # next(generator) -> generator ka PEHLA value deta hai (matlab pehla m jo condition pass kare).
-    return next(m for m, v in enumerate(ics, 1) if v >= 0.9 * max(ics))
+    for m in range(1, 13):
+        if avg_ics[m - 1] >= 0.9 * best:   # m - 1 kyunki list index 0 se shuru hota hai
+            return m
 
 
 # --- Chi-squared: text kitna English jaisa hai --------------------------
 # chi^2 = sum (observed - expected)^2 / expected
-#   observed = text mein letter ka count, expected = N * FREQ% / 100
 # Jitna CHHOTA chi^2, utna English ke kareeb.
 def chi_sq(s):
     N = len(s)
-    return sum((s.count(A[i]) - N * FREQ[i] / 100) ** 2 / (N * FREQ[i] / 100) for i in range(26))
+    total = 0
+    for i in range(26):
+        observed = s.count(A[i])            # text mein yeh letter asal mein kitni baar aaya
+        expected = N * FREQ[i] / 100        # English hota toh N letters mein kitni baar aata
+        total += (observed - expected) ** 2 / expected
+    return total
 
 
 # --- Crack: key length -> har column ka key letter ----------------------
@@ -169,13 +180,17 @@ def crack(c):
     m = key_length(c)
     key = ''
     for i in range(m):
-        col = c[i::m]                  # i-th column (ek hi key letter se encrypt hua)
-        # Is column ko 26 possible shifts (A..Z) se decrypt karke dekho.
-        # min(iterable, key=function) -> woh element return karta hai jiske liye
-        #   function ka value sabse chhota ho. Yahan: woh shift k jiska chi^2 minimum.
-        # lambda k: ... -> chhota naam-less function (input k, output chi^2).
-        # A[k] = woh key letter (k = 0 -> 'A', k = 18 -> 'S').
-        key += A[min(range(26), key=lambda k: chi_sq(vigenere(col, A[k], -1)))]
+        col = c[i::m]                   # i-th column (ek hi key letter se encrypt hua)
+        # Is column ko 26 possible shifts (A..Z) se decrypt karke dekho,
+        # jis shift ka chi^2 sabse kam -> wahi key letter.
+        best_shift = 0
+        best_score = chi_sq(vigenere(col, A[0], -1))   # pehle shift 0 ('A') ko best maan lo
+        for k in range(1, 26):
+            score = chi_sq(vigenere(col, A[k], -1))    # A[k] = key letter (k = 18 -> 'S')
+            if score < best_score:                     # isse better (kam) mila? -> update
+                best_score = score
+                best_shift = k
+        key += A[best_shift]
     # Poori key mil gayi -> poora ciphertext decrypt karo. Return tuple (key, plaintext).
     return key, vigenere(c, key, -1)
 
@@ -191,21 +206,30 @@ simple shift ciphers, and each of them can be solved by comparing its letter cou
 with the normal frequencies of the English language."""
 
 # .upper() -> sab capital. "if ch in A" -> spaces, comma, newline sab hata do (sirf A-Z rakho).
-P = ''.join(ch for ch in TEXT.upper() if ch in A)
+P = ''
+for ch in TEXT.upper():
+    if ch in A:
+        P += ch
 
-# key = ''.join(ch for ch in input("Enter key (letters, max 12): ").upper() if ch in A) or 'KEY'
-#   Edge cases: user ne lowercase/space/number daala -> sirf A-Z bachenge.
-#   Kuch bhi nahi daala ('' empty string falsy hai) -> "or 'KEY'" default key le leta hai.
+# raw = input("Enter key (letters, max 12): ").upper()
+#   Edge cases: user ne lowercase/space/number daala -> neeche loop sirf A-Z rakhega.
 #   Max 12 kyunki key_length() sirf 1..12 check karta hai.
-key = 'SECRET'
-C = vigenere(P, key)                   # encrypt (sign default = 1)
+raw = 'SECRET'
+key = ''
+for ch in raw:
+    if ch in A:
+        key += ch
+if key == '':                           # kuch bhi nahi daala -> default key
+    key = 'KEY'
+
+C = vigenere(P, key)                    # encrypt (sign default = 1)
 print("Ciphertext:", C)
 
 # crack tuple return karta hai -> do variables mein unpack.
 found_key, plain = crack(C)
 print("Key length:", len(found_key))
-print("Found key :", found_key)
-print("Plaintext :", plain)
+print("Found key:", found_key)
+print("Plaintext:", plain)
 
 
 # =====================================================================
@@ -219,22 +243,44 @@ FREQ = [8.2, 1.5, 2.8, 4.3, 12.7, 2.2, 2.0, 6.1, 7.0, 0.2, 0.8, 4.0, 2.4,
 
 
 def vigenere(text, key, sign=1):
-    return ''.join(A[(A.index(c) + sign * A.index(key[i % len(key)])) % 26] for i, c in enumerate(text))
+    result = ''
+    for i in range(len(text)):
+        p = A.index(text[i])
+        k = A.index(key[i % len(key)])
+        result += A[(p + sign * k) % 26]
+    return result
 
 
 def ic(s):
     N = len(s)
-    return sum(s.count(c) * (s.count(c) - 1) for c in A) / (N * (N - 1))
+    total = 0
+    for ch in A:
+        f = s.count(ch)
+        total += f * (f - 1)
+    return total / (N * (N - 1))
 
 
 def key_length(c):
-    ics = [sum(ic(c[i::m]) for i in range(m)) / m for m in range(1, 13)]
-    return next(m for m, v in enumerate(ics, 1) if v >= 0.9 * max(ics))
+    avg_ics = []
+    for m in range(1, 13):
+        total = 0
+        for i in range(m):
+            total += ic(c[i::m])
+        avg_ics.append(total / m)
+    best = max(avg_ics)
+    for m in range(1, 13):
+        if avg_ics[m - 1] >= 0.9 * best:
+            return m
 
 
 def chi_sq(s):
     N = len(s)
-    return sum((s.count(A[i]) - N * FREQ[i] / 100) ** 2 / (N * FREQ[i] / 100) for i in range(26))
+    total = 0
+    for i in range(26):
+        observed = s.count(A[i])
+        expected = N * FREQ[i] / 100
+        total += (observed - expected) ** 2 / expected
+    return total
 
 
 def crack(c):
@@ -242,7 +288,14 @@ def crack(c):
     key = ''
     for i in range(m):
         col = c[i::m]
-        key += A[min(range(26), key=lambda k: chi_sq(vigenere(col, A[k], -1)))]
+        best_shift = 0
+        best_score = chi_sq(vigenere(col, A[0], -1))
+        for k in range(1, 26):
+            score = chi_sq(vigenere(col, A[k], -1))
+            if score < best_score:
+                best_score = score
+                best_shift = k
+        key += A[best_shift]
     return key, vigenere(c, key, -1)
 
 
@@ -254,12 +307,23 @@ ciphertext. Once the length of the key is known, the message splits into several
 simple shift ciphers, and each of them can be solved by comparing its letter counts
 with the normal frequencies of the English language."""
 
-P = ''.join(ch for ch in TEXT.upper() if ch in A)
-key = ''.join(ch for ch in input("Enter key (letters, max 12): ").upper() if ch in A) or 'KEY'
+P = ''
+for ch in TEXT.upper():
+    if ch in A:
+        P += ch
+
+raw = input("Enter key (letters, max 12): ").upper()
+key = ''
+for ch in raw:
+    if ch in A:
+        key += ch
+if key == '':
+    key = 'KEY'
+
 C = vigenere(P, key)
 print("Ciphertext:", C)
 
 found_key, plain = crack(C)
 print("Key length:", len(found_key))
-print("Found key :", found_key)
-print("Plaintext :", plain)
+print("Found key:", found_key)
+print("Plaintext:", plain)

@@ -124,28 +124,39 @@ n = 10091          # order of G: n*G = O (point at infinity). n PRIME hai -> har
 # --- ECC point addition (detail Exp 8 mein) ---------------------------
 # Point ko tuple (x, y) se represent kiya, aur point at infinity O ko None se.
 def add(P, Q):
-    if P is None: return Q             # O + Q = Q   (O identity element hai, jaise 0)
-    if Q is None: return P             # P + O = P
-    (x1, y1), (x2, y2) = P, Q          # dono tuples ko khol ke x, y nikale
-    if x1 == x2 and (y1 + y2) % p == 0: return None   # P + (-P) = O (vertical line)
-    # slope l (lambda). Division mod p = inverse se multiply:
+    if P is None:                      # O + Q = Q   (O identity element hai, jaise 0)
+        return Q
+    if Q is None:                      # P + O = P
+        return P
+    x1, y1 = P                         # tuple khol ke x, y nikale
+    x2, y2 = Q
+    if x1 == x2 and (y1 + y2) % p == 0:    # P + (-P) = O (vertical line)
+        return None
+    if P == Q:                         # doubling: tangent slope = (3x^2 + a) / (2y)
+        top = 3 * x1 * x1 + a
+        bottom = 2 * y1
+    else:                              # addition: chord slope = (y2 - y1) / (x2 - x1)
+        top = y2 - y1
+        bottom = x2 - x1
+    # Division mod p = inverse se multiply:
     #   pow(x, -1, p) -> x ka modular inverse mod p (Python 3.8+), yaani 1/x mod p
-    if P == Q: l = (3 * x1 * x1 + a) * pow(2 * y1, -1, p) % p   # doubling: tangent slope
-    else: l = (y2 - y1) * pow(x2 - x1, -1, p) % p              # addition: chord slope
-    x3 = (l * l - x1 - x2) % p                                  # x3 = l^2 - x1 - x2
-    return (x3, (l * (x1 - x3) - y1) % p)                       # y3 = l(x1 - x3) - y1
+    slope = top * pow(bottom, -1, p) % p
+    x3 = (slope * slope - x1 - x2) % p     # x3 = slope^2 - x1 - x2
+    y3 = (slope * (x1 - x3) - y1) % p      # y3 = slope(x1 - x3) - y1
+    return (x3, y3)
 
 
 # --- Scalar multiplication k*P (double-and-add, detail Exp 8 mein) ----
-# k ke binary bits right se left padho: bit 1 ho toh R mein P add karo,
+# k ke binary bits right se left padho: bit 1 (k odd) ho toh result mein P add karo,
 # har step pe P ko double karo. O(log k) steps, k baar add nahi karna padta.
 def mul(k, P):
-    R = None                           # result shuru mein O (identity)
-    while k:                           # jab tak k ke bits bache hain
-        if k & 1: R = add(R, P)        # k & 1 -> last bit (1 ya 0)
+    result = None                      # result shuru mein O (identity)
+    while k > 0:                       # jab tak k ke bits bache hain
+        if k % 2 == 1:                 # k odd -> last bit 1
+            result = add(result, P)
         P = add(P, P)                  # P, 2P, 4P, 8P ...
-        k >>= 1                        # k ko right shift = last bit hata do (k // 2)
-    return R
+        k = k // 2                     # last bit hata do
+    return result
 
 
 # --- Hash: message -> number mod n -------------------------------------
@@ -155,7 +166,8 @@ def mul(k, P):
 #                             int('ff', 16) = 255. Yahan 256-bit ka bada number aata hai.
 # % n                      -> usko 0..n-1 range mein laao (ECDSA mein hash mod n chahiye)
 def H(m):
-    return int(hashlib.sha256(m.encode()).hexdigest(), 16) % n
+    hex_digest = hashlib.sha256(m.encode()).hexdigest()   # message bytes ka SHA-256, hex string
+    return int(hex_digest, 16) % n                         # hex -> number, phir mod n
 
 
 # --- SIGN (private key d se) ----------------------------------------------
@@ -163,7 +175,8 @@ def H(m):
 def sign(m, d):
     while True:                        # loop sirf edge case ke liye (r ya s = 0 aaye toh retry)
         k = random.randint(1, n - 1)   # nonce k: har signature ke liye NAYA random (secret!)
-        r = mul(k, G)[0] % n           # r = (k*G).x mod n   -> [0] se point ka x liya
+        point = mul(k, G)              # random point k*G
+        r = point[0] % n               # r = (k*G).x mod n   -> [0] se point ka x liya
         # s = k^-1 * (H(m) + d*r) mod n
         #   pow(k, -1, n) -> k ka inverse mod n (n prime hai isliye hamesha milta hai)
         s = pow(k, -1, n) * (H(m) + d * r) % n
@@ -180,9 +193,12 @@ def verify(m, r, s, Q):
     if not (0 < r < n and 0 < s < n):  # edge case: range ke bahar -> seedha reject
         return False
     w = pow(s, -1, n)                  # w = s^-1 mod n
-    # u1 = H(m)*w mod n,  u2 = r*w mod n,  X = u1*G + u2*Q
-    X = add(mul(H(m) * w % n, G), mul(r * w % n, Q))
-    return X is not None and X[0] % n == r   # X = O aaye toh bhi reject
+    u1 = H(m) * w % n                  # u1 = H(m) * w mod n
+    u2 = r * w % n                     # u2 = r * w mod n
+    X = add(mul(u1, G), mul(u2, Q))    # X = u1*G + u2*Q  (sahi signature pe X = k*G)
+    if X is None:                      # X = O aaye toh reject
+        return False
+    return X[0] % n == r               # X ka x mod n == r -> valid
 
 
 # --- Key generation ---------------------------------------------------
@@ -215,33 +231,46 @@ n = 10091
 
 
 def add(P, Q):
-    if P is None: return Q
-    if Q is None: return P
-    (x1, y1), (x2, y2) = P, Q
-    if x1 == x2 and (y1 + y2) % p == 0: return None
-    if P == Q: l = (3 * x1 * x1 + a) * pow(2 * y1, -1, p) % p
-    else: l = (y2 - y1) * pow(x2 - x1, -1, p) % p
-    x3 = (l * l - x1 - x2) % p
-    return (x3, (l * (x1 - x3) - y1) % p)
+    if P is None:
+        return Q
+    if Q is None:
+        return P
+    x1, y1 = P
+    x2, y2 = Q
+    if x1 == x2 and (y1 + y2) % p == 0:
+        return None
+    if P == Q:
+        top = 3 * x1 * x1 + a
+        bottom = 2 * y1
+    else:
+        top = y2 - y1
+        bottom = x2 - x1
+    slope = top * pow(bottom, -1, p) % p
+    x3 = (slope * slope - x1 - x2) % p
+    y3 = (slope * (x1 - x3) - y1) % p
+    return (x3, y3)
 
 
 def mul(k, P):
-    R = None
-    while k:
-        if k & 1: R = add(R, P)
+    result = None
+    while k > 0:
+        if k % 2 == 1:
+            result = add(result, P)
         P = add(P, P)
-        k >>= 1
-    return R
+        k = k // 2
+    return result
 
 
 def H(m):
-    return int(hashlib.sha256(m.encode()).hexdigest(), 16) % n
+    hex_digest = hashlib.sha256(m.encode()).hexdigest()
+    return int(hex_digest, 16) % n
 
 
 def sign(m, d):
     while True:
         k = random.randint(1, n - 1)
-        r = mul(k, G)[0] % n
+        point = mul(k, G)
+        r = point[0] % n
         s = pow(k, -1, n) * (H(m) + d * r) % n
         if r != 0 and s != 0:
             return r, s
@@ -251,8 +280,12 @@ def verify(m, r, s, Q):
     if not (0 < r < n and 0 < s < n):
         return False
     w = pow(s, -1, n)
-    X = add(mul(H(m) * w % n, G), mul(r * w % n, Q))
-    return X is not None and X[0] % n == r
+    u1 = H(m) * w % n
+    u2 = r * w % n
+    X = add(mul(u1, G), mul(u2, Q))
+    if X is None:
+        return False
+    return X[0] % n == r
 
 
 d = random.randint(1, n - 1)

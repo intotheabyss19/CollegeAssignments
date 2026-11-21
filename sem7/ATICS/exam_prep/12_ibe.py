@@ -122,11 +122,13 @@ def e(X, Y):
 
 
 # --- H1: identity (string) -> G1 ka point (number 1..q-1) ----------------
-# ID.encode()        -> string ko bytes: "bob@x".encode() = b'bob@x'
-# int(hex, 16)       -> hex string ko number (base 16)
-# % (q - 1) + 1      -> range 1..q-1 mein laao (0 nahi chahiye, 0 se pairing hamesha 1)
 def H1(ID):
-    return int(hashlib.sha256(ID.encode()).hexdigest(), 16) % (q - 1) + 1
+    # ID.encode() -> string ko bytes: "bob@x".encode() = b'bob@x' (hash ko bytes chahiye)
+    # .hexdigest() -> hash ko 64-char hex STRING mein, jaise '9f86d0...'
+    hex_digest = hashlib.sha256(ID.encode()).hexdigest()
+    # int(hex_digest, 16) -> hex string ko number (base 16): int('ff', 16) = 255
+    # % (q - 1) + 1 -> range 1..q-1 mein laao (0 nahi chahiye, 0 se pairing hamesha 1)
+    return int(hex_digest, 16) % (q - 1) + 1
 
 
 # --- H2: GT element (number) -> keystream bytes ----------------------------
@@ -136,32 +138,37 @@ def H2(x, length):
     return hashlib.shake_256(str(x).encode()).digest(length)
 
 
-# --- XOR do byte strings --------------------------------------------------
-# zip(a, b)    -> dono se ek-ek element ka pair deta hai: (a[0], b[0]), (a[1], b[1]) ...
-# i ^ j        -> bitwise XOR do bytes (0-255 ke ints) ka
-# bytes(list)  -> ints ki list/generator se bytes object banao
+# --- XOR do byte strings (same length) ------------------------------------
 # XOR ka magic: (M ^ K) ^ K = M  -> same function encrypt aur decrypt dono karta hai
 def xor(a, b):
-    return bytes(i ^ j for i, j in zip(a, b))
+    result = b''                       # b'' = khaali bytes object
+    for i in range(len(a)):
+        # a[i] -> bytes pe indexing ek INT (0-255) deta hai: b'AB'[0] = 65
+        # ^    -> bitwise XOR do ints ka (1 jahan bits alag, 0 jahan same)
+        # bytes([x]) -> ek int se 1-byte bytes object: bytes([65]) = b'A'
+        result += bytes([a[i] ^ b[i]])
+    return result
 
 
 # --- EXTRACT (PKG karta hai): user ka private key ---------------------------
 # Q_ID = H1(ID)  (public, koi bhi bana sakta hai)
 # d_ID = s * Q_ID mod q  -> sirf PKG bana sakta hai kyunki master key s sirf usko pata hai
 def extract(ID, s):
-    return s * H1(ID) % q
+    Q_ID = H1(ID)
+    return s * Q_ID % q
 
 
 # --- ENCRYPT (sender): sirf ID aur P_pub chahiye, koi certificate nahi -------
 def encrypt(M, ID, P_pub):
     r = random.randint(1, q - 1)       # har message ke liye fresh random r
-    # K = e(Q_ID, P_pub)^r  -> shared secret (GT ka element)
-    #   pow(base, exp, mod) -> (base ** exp) % mod, fast
-    K = pow(e(H1(ID), P_pub), r, p)
-    # Ciphertext = (U, V):
-    #   U = r*P        -> receiver ko r ka "hint" (r khud nahi, sirf rP)
-    #   V = M XOR H2(K) -> message ko keystream se XOR kiya (len(M) jitni keystream)
-    return r * P % q, xor(M, H2(K, len(M)))     # tuple (U, V) return
+    Q_ID = H1(ID)                      # receiver ki ID se uska public point
+    pairing_value = e(Q_ID, P_pub)     # e(Q_ID, P_pub) - GT ka element
+    # K = e(Q_ID, P_pub)^r -> shared secret. pow(base, exp, mod) = (base ** exp) % mod, fast
+    K = pow(pairing_value, r, p)
+    U = r * P % q                      # U = r*P -> receiver ko r ka "hint" (r khud nahi, sirf rP)
+    keystream = H2(K, len(M))          # K se message jitni lambi keystream
+    V = xor(M, keystream)              # V = M XOR keystream (encrypted message)
+    return U, V                        # ciphertext = tuple (U, V)
 
 
 # --- DECRYPT (receiver): apne private key d_ID se -------------------------
@@ -169,31 +176,34 @@ def encrypt(M, ID, P_pub):
 #                                         = e(Q_ID, s*P)^r = e(Q_ID, P_pub)^r = K  ✓
 # Same K -> same keystream -> XOR karke M wapas.
 def decrypt(U, V, d):
-    return xor(V, H2(e(d, U), len(V)))
+    K = e(d, U)                        # receiver ka K (sender wale K ke barabar)
+    keystream = H2(K, len(V))
+    return xor(V, keystream)           # XOR dobara -> original message
 
 
 # --- SETUP (PKG karta hai, ek hi baar) ---------------------------------------
 s = random.randint(1, q - 1)           # master secret key s (sirf PKG ke paas)
 P_pub = s * P % q                      # master public key P_pub = s*P (sabko publish)
-print("Setup  : master key s =", s, " P_pub =", P_pub)
+print("Setup: master key s =", s, "P_pub =", P_pub)
 
 # ID = input("Enter receiver's ID: ")
 ID = "bob@nitsikkim.ac.in"             # ID hi public key hai (email, roll no, phone ...)
 d_ID = extract(ID, s)                  # PKG ne Bob ko uska private key diya
-print("Extract: Q_ID =", H1(ID), " d_ID =", d_ID)
+print("Extract: Q_ID =", H1(ID), "d_ID =", d_ID)
 
 # M = input("Enter message: ").encode()
 #   .encode() -> string ko bytes, kyunki XOR bytes pe hota hai
 M = "Meet me at 5 PM".encode()
 U, V = encrypt(M, ID, P_pub)           # tuple unpack: U (number), V (bytes)
-# V.hex() -> bytes ko readable hex string: b'\x0f\xa1' -> '0fa1'
-print("Encrypt: U =", U, " V =", V.hex())
+# V bytes hai - seedha print karo, b'\x0f\xa1...' jaisa dikhega
+print("Encrypt: U =", U, "V =", V)
 # .decode() -> bytes ko wapas string (encode ka ulta)
 print("Decrypt:", decrypt(U, V, d_ID).decode())
 
 # Eve ka private key (alag ID) -> alag K -> galat keystream -> garbage bytes.
 # Garbage valid UTF-8 nahi hoga, isliye .decode() nahi kiya, raw bytes print kiye.
-print("\nDecrypt with Eve's key:", decrypt(U, V, extract("eve@example.com", s)))
+d_eve = extract("eve@example.com", s)
+print("\nDecrypt with Eve's key:", decrypt(U, V, d_eve))
 
 
 # =====================================================================
@@ -211,7 +221,8 @@ def e(X, Y):
 
 
 def H1(ID):
-    return int(hashlib.sha256(ID.encode()).hexdigest(), 16) % (q - 1) + 1
+    hex_digest = hashlib.sha256(ID.encode()).hexdigest()
+    return int(hex_digest, 16) % (q - 1) + 1
 
 
 def H2(x, length):
@@ -219,33 +230,45 @@ def H2(x, length):
 
 
 def xor(a, b):
-    return bytes(i ^ j for i, j in zip(a, b))
+    result = b''
+    for i in range(len(a)):
+        result += bytes([a[i] ^ b[i]])
+    return result
 
 
 def extract(ID, s):
-    return s * H1(ID) % q
+    Q_ID = H1(ID)
+    return s * Q_ID % q
 
 
 def encrypt(M, ID, P_pub):
     r = random.randint(1, q - 1)
-    K = pow(e(H1(ID), P_pub), r, p)
-    return r * P % q, xor(M, H2(K, len(M)))
+    Q_ID = H1(ID)
+    pairing_value = e(Q_ID, P_pub)
+    K = pow(pairing_value, r, p)
+    U = r * P % q
+    keystream = H2(K, len(M))
+    V = xor(M, keystream)
+    return U, V
 
 
 def decrypt(U, V, d):
-    return xor(V, H2(e(d, U), len(V)))
+    K = e(d, U)
+    keystream = H2(K, len(V))
+    return xor(V, keystream)
 
 
 s = random.randint(1, q - 1)
 P_pub = s * P % q
-print("Setup  : master key s =", s, " P_pub =", P_pub)
+print("Setup: master key s =", s, "P_pub =", P_pub)
 
 ID = input("Enter receiver's ID: ")
 d_ID = extract(ID, s)
-print("Extract: Q_ID =", H1(ID), " d_ID =", d_ID)
+print("Extract: Q_ID =", H1(ID), "d_ID =", d_ID)
 
 M = input("Enter message: ").encode()
 U, V = encrypt(M, ID, P_pub)
-print("Encrypt: U =", U, " V =", V.hex())
+print("Encrypt: U =", U, "V =", V)
 print("Decrypt:", decrypt(U, V, d_ID).decode())
-print("\nDecrypt with Eve's key:", decrypt(U, V, extract("eve@example.com", s)))
+d_eve = extract("eve@example.com", s)
+print("\nDecrypt with Eve's key:", decrypt(U, V, d_eve))

@@ -111,27 +111,38 @@ n = 10091
 # --- Exp 8 wala point addition (same code) -------------------------------
 def add(P, Q):
     # None = point at infinity O (identity): O + Q = Q
-    if P is None: return Q
-    if Q is None: return P
-    (x1, y1), (x2, y2) = P, Q          # P = (x1, y1), Q = (x2, y2)
+    if P is None:
+        return Q
+    if Q is None:
+        return P
+    x1, y1 = P                         # P = (x1, y1)
+    x2, y2 = Q                         # Q = (x2, y2)
     # P + (-P) = O (vertical line, teesra point infinity pe)
-    if x1 == x2 and (y1 + y2) % p == 0: return None
-    # slope: doubling -> (3x^2 + a)/(2y),  addition -> (y2 - y1)/(x2 - x1)
+    if x1 == x2 and (y1 + y2) % p == 0:
+        return None
+    # slope = top / bottom: doubling -> (3x^2 + a)/(2y),  addition -> (y2 - y1)/(x2 - x1)
+    if P == Q:
+        top = 3 * x1 * x1 + a
+        bottom = 2 * y1
+    else:
+        top = y2 - y1
+        bottom = x2 - x1
     # pow(x, -1, p) = modular inverse ("divide" ki jagah), x ≡ 0 pe ValueError
-    if P == Q: l = (3 * x1 * x1 + a) * pow(2 * y1, -1, p) % p
-    else: l = (y2 - y1) * pow(x2 - x1, -1, p) % p
-    x3 = (l * l - x1 - x2) % p         # x3 = l^2 - x1 - x2
-    return (x3, (l * (x1 - x3) - y1) % p)   # y3 = l(x1 - x3) - y1
+    slope = top * pow(bottom, -1, p) % p
+    x3 = (slope * slope - x1 - x2) % p     # x3 = slope^2 - x1 - x2
+    y3 = (slope * (x1 - x3) - y1) % p      # y3 = slope(x1 - x3) - y1
+    return (x3, y3)
 
 
 # --- Exp 8 wala double-and-add (same code) -------------------------------
 def mul(k, P):
-    R = None
-    while k:
-        if k & 1: R = add(R, P)        # k & 1 = last bit; 1 ho toh add
+    result = None
+    while k > 0:
+        if k % 2 == 1:                 # k odd = last bit 1 -> add karo
+            result = add(result, P)
         P = add(P, P)                  # har step pe double
-        k >>= 1                        # last bit hatao (k // 2)
-    return R
+        k = k // 2                     # last bit hatao
+    return result
 
 
 # --- Step 1: Dono apni private key chunte hain ---------------------------
@@ -143,9 +154,9 @@ dB = random.randint(1, n - 1)          # Bob ka secret
 # Q_A = dA*G public bhej sakte hain - Q_A aur G se dA nikalna = ECDLP (bahut mushkil).
 QA = mul(dA, G)
 QB = mul(dB, G)
-print(f"Curve: y^2 = x^3 + {a}x + {b} (mod {p}), G = {G}, n = {n}")
+print("p, a, b =", p, a, b, " G =", G, " n =", n)
 print("Alice: private d_A =", dA, " public Q_A =", QA)
-print("Bob  : private d_B =", dB, " public Q_B =", QB)
+print("Bob: private d_B =", dB, " public Q_B =", QB)
 
 # --- Step 3: Public keys exchange, phir apni private key se multiply ------
 # Alice: dA * QB = dA * (dB * G)
@@ -154,7 +165,7 @@ print("Bob  : private d_B =", dB, " public Q_B =", QB)
 SA = mul(dA, QB)
 SB = mul(dB, QA)
 print("Alice's shared key:", SA)
-print("Bob's shared key  :", SB)
+print("Bob's shared key:", SB)
 print("Keys match:", SA == SB)         # tuples compare: x aur y dono same -> True
 # Real life mein shared point ka x-coordinate hash karke AES key banate hain.
 
@@ -172,35 +183,46 @@ n = 10091
 
 
 def add(P, Q):
-    if P is None: return Q
-    if Q is None: return P
-    (x1, y1), (x2, y2) = P, Q
-    if x1 == x2 and (y1 + y2) % p == 0: return None
-    if P == Q: l = (3 * x1 * x1 + a) * pow(2 * y1, -1, p) % p
-    else: l = (y2 - y1) * pow(x2 - x1, -1, p) % p
-    x3 = (l * l - x1 - x2) % p
-    return (x3, (l * (x1 - x3) - y1) % p)
+    if P is None:
+        return Q
+    if Q is None:
+        return P
+    x1, y1 = P
+    x2, y2 = Q
+    if x1 == x2 and (y1 + y2) % p == 0:
+        return None
+    if P == Q:
+        top = 3 * x1 * x1 + a
+        bottom = 2 * y1
+    else:
+        top = y2 - y1
+        bottom = x2 - x1
+    slope = top * pow(bottom, -1, p) % p
+    x3 = (slope * slope - x1 - x2) % p
+    y3 = (slope * (x1 - x3) - y1) % p
+    return (x3, y3)
 
 
 def mul(k, P):
-    R = None
-    while k:
-        if k & 1: R = add(R, P)
+    result = None
+    while k > 0:
+        if k % 2 == 1:
+            result = add(result, P)
         P = add(P, P)
-        k >>= 1
-    return R
+        k = k // 2
+    return result
 
 
 dA = random.randint(1, n - 1)
 dB = random.randint(1, n - 1)
 QA = mul(dA, G)
 QB = mul(dB, G)
-print(f"Curve: y^2 = x^3 + {a}x + {b} (mod {p}), G = {G}, n = {n}")
+print("p, a, b =", p, a, b, " G =", G, " n =", n)
 print("Alice: private d_A =", dA, " public Q_A =", QA)
-print("Bob  : private d_B =", dB, " public Q_B =", QB)
+print("Bob: private d_B =", dB, " public Q_B =", QB)
 
 SA = mul(dA, QB)
 SB = mul(dB, QA)
 print("Alice's shared key:", SA)
-print("Bob's shared key  :", SB)
+print("Bob's shared key:", SB)
 print("Keys match:", SA == SB)

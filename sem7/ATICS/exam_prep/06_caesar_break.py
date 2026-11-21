@@ -113,32 +113,35 @@ A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 # --- caesar(): encrypt aur decrypt dono ----------------------------------
 # k positive -> encrypt (aage khiskao), k negative -> decrypt (peeche khiskao).
 def caesar(text, k):
-    # Har character c ke liye:
-    #   agar letter hai: A.index(c) se number (0..25), + k, % 26 (Z ke baad wapas A),
-    #                    phir A[...] se wapas letter.  Example: 'Y' + 3 -> (24+3)%26 = 1 -> 'B'
-    #   warna (space, comma, digit): waise hi rakh do.
-    # Python mein (-1) % 26 = 25 hota hai (positive), isliye decrypt (k negative) bhi seedha chalta hai.
-    # ''.join(...) saare characters jod ke ek string bana deta hai.
-    return ''.join(A[(A.index(c) + k) % 26] if c in A else c for c in text)
+    result = ''                         # yahan naya text letter-by-letter banega
+    for ch in text:
+        if ch in A:                     # letter hai -> shift karo
+            # A.index(ch) -> letter ka number (0..25). + k -> shift. % 26 -> Z ke baad wapas A.
+            # Example: 'Y' + 3 -> (24 + 3) % 26 = 1 -> A[1] = 'B'
+            # Python mein (-1) % 26 = 25 (positive), isliye decrypt (k negative) bhi chalta hai.
+            new_pos = (A.index(ch) + k) % 26
+            result += A[new_pos]        # number -> wapas letter, result mein jodo
+        else:
+            result += ch                # space, comma, digit -> waise hi rakh do
+    return result
 
 
 # --- check(): har attempt pe call hota hai ------------------------------
 # attempt = is key se decrypt karke jo mila, word = original, k = try ki gayi key.
 # Match pe "SUCCEEDED" print + True return, warna "failed" print + False return.
-# {k:2d} = number ko 2 jagah mein right-align (sirf output seedha dikhne ke liye).
 def check(attempt, word, k):
     if attempt == word:
-        print(f"Key {k:2d}: {attempt} -> Brute force attempt SUCCEEDED")
+        print("Key", k, ":", attempt, "-> Brute force attempt SUCCEEDED")
         return True
-    print(f"Key {k:2d}: {attempt} -> failed")
+    print("Key", k, ":", attempt, "-> failed")
     return False
 
 
 # --- brute_force(): saari keys try karo ---------------------------------
 def brute_force(cipher, word):
     for k in range(26):                # range(26) = 0, 1, ..., 25 (k = 26 wahi hai jo 0)
-        # caesar(cipher, -k) = k maan ke decrypt, phir check() se result dekho.
-        if check(caesar(cipher, -k), word, k):
+        attempt = caesar(cipher, -k)   # k maan ke decrypt (peeche khiskao)
+        if check(attempt, word, k):    # check() print karega + True/False batayega
             return k                   # return = function turant khatam -> aage ke k try nahi honge
     return None                        # loop poora chala aur match nahi mila (Caesar mein hoga nahi)
 
@@ -150,7 +153,9 @@ word = "HELLO"
 
 # Edge case: agar word mein ek bhi letter nahi (empty, ya "123") toh Caesar kuch
 # change hi nahi karega -> key 0 pe hi "match" ho jaayega. Isliye dobara maango.
-#   any(...) -> agar koi bhi ek item True ho toh True. Yahan: "kya koi letter hai?"
+#   any(...) -> built-in: agar andar ka koi bhi ek check True ho toh True.
+#   "c in A for c in word" -> word ke har character pe check "kya yeh letter hai?"
+#   Matlab any(...) = "word mein kam se kam ek letter hai?"  "123" -> False, "Hi1" -> True
 while not any(c in A for c in word):
     # word = input("Enter at least one letter: ").upper()
     word = "HELLO"
@@ -172,20 +177,28 @@ A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
 
 def caesar(text, k):
-    return ''.join(A[(A.index(c) + k) % 26] if c in A else c for c in text)
+    result = ''
+    for ch in text:
+        if ch in A:
+            new_pos = (A.index(ch) + k) % 26
+            result += A[new_pos]
+        else:
+            result += ch
+    return result
 
 
 def check(attempt, word, k):
     if attempt == word:
-        print(f"Key {k:2d}: {attempt} -> Brute force attempt SUCCEEDED")
+        print("Key", k, ":", attempt, "-> Brute force attempt SUCCEEDED")
         return True
-    print(f"Key {k:2d}: {attempt} -> failed")
+    print("Key", k, ":", attempt, "-> failed")
     return False
 
 
 def brute_force(cipher, word):
     for k in range(26):
-        if check(caesar(cipher, -k), word, k):
+        attempt = caesar(cipher, -k)
+        if check(attempt, word, k):
             return k
     return None
 

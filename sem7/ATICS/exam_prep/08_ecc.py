@@ -80,7 +80,8 @@
 >> Exam trick (yaad rakhne ke liye)
    "Same point? tangent (3x²+a)/2y : warna chord (y2-y1)/(x2-x1)"
    "x3 = λ² - x1 - x2,  y3 = λ(x1 - x3) - y1"
-   mul = "R = O; while k: odd -> add, P double, k half"
+   (Code mein λ ka naam "slope" hai: slope = top * pow(bottom, -1, p) % p)
+   mul = "result = O; while k > 0: k odd -> add, P double, k = k // 2"
 
 >> Viva Questions
    Q1. ECC ka RSA pe kya fayda hai?
@@ -137,7 +138,8 @@ G = (5, 1)
 def on_curve(P):
     # None = POINT AT INFINITY (O). Yeh group ka "zero" hai: P + O = P.
     # Iska koi (x, y) nahi hota, isliye Python ka None use kiya. O hamesha "curve pe" maana jaata hai.
-    if P is None: return True
+    if P is None:
+        return True
     x, y = P                           # tuple unpacking: (5, 1) -> x = 5, y = 1
     # y^2 - (x^3 + ax + b) ka mod p zero hona chahiye. x ** 3 = x cube.
     return (y * y - x ** 3 - a * x - b) % p == 0
@@ -145,61 +147,73 @@ def on_curve(P):
 
 # --- Point addition + doubling (ek hi function) -------------------------
 def add(P, Q):
-    # O identity hai: O + Q = Q, P + O = P
-    if P is None: return Q
-    if Q is None: return P
-    # Double tuple unpacking: P = (x1, y1), Q = (x2, y2) ek line mein.
-    (x1, y1), (x2, y2) = P, Q
+    # O identity hai: O + Q = Q, P + O = P  (None = point at infinity O)
+    if P is None:
+        return Q
+    if Q is None:
+        return P
+    # Tuple unpacking: P = (5, 1) -> x1 = 5, y1 = 1. Same Q ke liye.
+    x1, y1 = P
+    x2, y2 = Q
     # P + (-P) = O: -P = (x, -y). Same x aur y1 + y2 ≡ 0 (mod p) matlab dono
     # points ek hi vertical line pe hain -> line curve ko teesri jagah nahi kaatti
     # -> answer "infinity" pe hai = O.  (y = 0 wale point ko double karna bhi yahi case hai.)
-    if x1 == x2 and (y1 + y2) % p == 0: return None
-    # Slope l (lambda):
-    #   P == Q (DOUBLING):  l = (3x1^2 + a) / (2y1)     <- tangent line ka slope (calculus: dy/dx)
-    #   P != Q (ADDITION):  l = (y2 - y1) / (x2 - x1)   <- do points ko jodne wali line ka slope
-    # Mod p mein "divide" nahi hota -> inverse se multiply karte hain:
+    if x1 == x2 and (y1 + y2) % p == 0:
+        return None
+    # Slope = top / bottom:
+    #   P == Q (DOUBLING):  (3x1^2 + a) / (2y1)     <- tangent line ka slope (calculus: dy/dx)
+    #   P != Q (ADDITION):  (y2 - y1) / (x2 - x1)   <- do points ko jodne wali line ka slope
+    if P == Q:
+        top = 3 * x1 * x1 + a
+        bottom = 2 * y1
+    else:
+        top = y2 - y1
+        bottom = x2 - x1
+    # Mod p mein "divide" nahi hota -> bottom ke inverse se multiply karte hain:
     #   pow(x, -1, p) = x ka modular inverse (x * inv % p == 1). Python 3.8+.
     #   Example: pow(2, -1, 17) = 9 kyunki 2 * 9 = 18 ≡ 1 (mod 17).
     #   Agar x ≡ 0 (mod p) ho toh inverse nahi hota -> ValueError. Upar wali
     #   P + (-P) check isi case ko pehle hi pakad leti hai.
-    if P == Q: l = (3 * x1 * x1 + a) * pow(2 * y1, -1, p) % p
-    else: l = (y2 - y1) * pow(x2 - x1, -1, p) % p
+    slope = top * pow(bottom, -1, p) % p
     # Line curve ko teesre point pe kaatti hai, use x-axis pe reflect karo:
-    #   x3 = l^2 - x1 - x2
-    #   y3 = l(x1 - x3) - y1      (minus y1 = reflection)
+    #   x3 = slope^2 - x1 - x2
+    #   y3 = slope * (x1 - x3) - y1      (minus y1 = reflection)
     # % p se sab 0..p-1 mein rehta hai (negative bhi positive ban jaata hai).
-    x3 = (l * l - x1 - x2) % p
-    return (x3, (l * (x1 - x3) - y1) % p)
-    # Example 2G: l = (3*25 + 2) * inv(2) = 77 * 9 = 693 % 17 = 13
+    x3 = (slope * slope - x1 - x2) % p
+    y3 = (slope * (x1 - x3) - y1) % p
+    return (x3, y3)
+    # Example 2G: top = 3*25 + 2 = 77, bottom = 2, inverse(2) = 9
+    #             slope = 77 * 9 = 693 % 17 = 13
     #             x3 = 169 - 10 = 159 % 17 = 6,  y3 = 13*(5-6) - 1 = -14 % 17 = 3  -> (6, 3)
 
 
 # --- Scalar multiplication kP: DOUBLE-AND-ADD --------------------------
 # kP = P + P + ... (k baar) -> k bada ho (256-bit) toh k additions impossible.
-# Trick: k ko binary mein dekho. Har bit pe P double karo; bit 1 ho toh R mein add karo.
-# Sirf ~log2(k) steps (RSA ke square-and-multiply jaisa).
+# Trick: k ko binary mein dekho. Har step pe P double karo; k ka last bit 1 ho
+# (k odd ho) toh result mein add karo. Sirf ~log2(k) steps (RSA ke square-and-multiply jaisa).
 def mul(k, P):
-    R = None                           # result, shuru mein O (zero)
-    while k:                           # jab tak k ke bits bache hain (k = 0 -> False)
-        # k & 1 -> bitwise AND, k ka LAST bit deta hai (odd -> 1, even -> 0). 13 & 1 = 1
-        if k & 1: R = add(R, P)
+    result = None                      # result shuru mein O (zero)
+    while k > 0:                       # jab tak k ke bits bache hain
+        # k % 2 == 1 -> k odd hai -> binary ka LAST bit 1 hai -> is P ko result mein jodo.
+        if k % 2 == 1:
+            result = add(result, P)
         P = add(P, P)                  # P -> 2P -> 4P -> 8P ...
-        # k >>= 1 -> right shift, last bit hata do (k = k // 2). 13 (1101) -> 6 (110)
-        k >>= 1
-    return R
-    # Trace k = 13 = 1101b (R shuru mein O, P = G):
-    #   bit 1 -> R = G      , P = 2G
-    #   bit 0 -> (skip)     , P = 4G
-    #   bit 1 -> R = G + 4G = 5G , P = 8G
-    #   bit 1 -> R = 5G + 8G = 13G  ✓   (4 doublings + 3 additions, 12 nahi)
+        # k // 2 -> integer division, binary ka last bit hata deta hai. 13 (1101) -> 6 (110)
+        k = k // 2
+    return result
+    # Trace k = 13 = 1101b (result shuru mein O, P = G):
+    #   k = 13 odd  -> result = G        , P = 2G , k = 6
+    #   k = 6  even -> (skip)            , P = 4G , k = 3
+    #   k = 3  odd  -> result = G + 4G = 5G , P = 8G , k = 1
+    #   k = 1  odd  -> result = 5G + 8G = 13G  ✓   (4 doublings + 3 additions, 12 nahi)
 
 
-print(f"Curve: y^2 = x^3 + {a}x + {b} (mod {p}), G = {G}")
+print("p, a, b =", p, a, b, " G =", G)
 P = G
 Q = add(G, G)                          # point DOUBLING: 2G = (6, 3)
-print("P = G   :", P)
-print("Q = 2P  :", Q)
-print("P + Q   :", add(P, Q))          # point ADDITION: G + 2G = 3G = (10, 6)
+print("P = G:", P)
+print("Q = 2P:", Q)
+print("P + Q:", add(P, Q))          # point ADDITION: G + 2G = 3G = (10, 6)
 # Cross-check: double-and-add se 3G bhi wahi aana chahiye.
 print("3G == P + Q:", mul(3, G) == add(P, Q))
 
@@ -208,7 +222,7 @@ print("3G == P + Q:", mul(3, G) == add(P, Q))
 #   G ka order 19 hai -> 19G = O (None print hoga), 20G = G wapas. k = 0 -> None.
 k = 7
 R = mul(k, G)                          # 7G = (0, 6)
-print(f"{k}G =", R, "| on curve:", on_curve(R))
+print("k * G =", R, " on curve:", on_curve(R))
 
 
 # =====================================================================
@@ -221,39 +235,51 @@ G = (5, 1)
 
 
 def on_curve(P):
-    if P is None: return True
+    if P is None:
+        return True
     x, y = P
     return (y * y - x ** 3 - a * x - b) % p == 0
 
 
 def add(P, Q):
-    if P is None: return Q
-    if Q is None: return P
-    (x1, y1), (x2, y2) = P, Q
-    if x1 == x2 and (y1 + y2) % p == 0: return None
-    if P == Q: l = (3 * x1 * x1 + a) * pow(2 * y1, -1, p) % p
-    else: l = (y2 - y1) * pow(x2 - x1, -1, p) % p
-    x3 = (l * l - x1 - x2) % p
-    return (x3, (l * (x1 - x3) - y1) % p)
+    if P is None:
+        return Q
+    if Q is None:
+        return P
+    x1, y1 = P
+    x2, y2 = Q
+    if x1 == x2 and (y1 + y2) % p == 0:
+        return None
+    if P == Q:
+        top = 3 * x1 * x1 + a
+        bottom = 2 * y1
+    else:
+        top = y2 - y1
+        bottom = x2 - x1
+    slope = top * pow(bottom, -1, p) % p
+    x3 = (slope * slope - x1 - x2) % p
+    y3 = (slope * (x1 - x3) - y1) % p
+    return (x3, y3)
 
 
 def mul(k, P):
-    R = None
-    while k:
-        if k & 1: R = add(R, P)
+    result = None
+    while k > 0:
+        if k % 2 == 1:
+            result = add(result, P)
         P = add(P, P)
-        k >>= 1
-    return R
+        k = k // 2
+    return result
 
 
-print(f"Curve: y^2 = x^3 + {a}x + {b} (mod {p}), G = {G}")
+print("p, a, b =", p, a, b, " G =", G)
 P = G
 Q = add(G, G)
-print("P = G   :", P)
-print("Q = 2P  :", Q)
-print("P + Q   :", add(P, Q))
+print("P = G:", P)
+print("Q = 2P:", Q)
+print("P + Q:", add(P, Q))
 print("3G == P + Q:", mul(3, G) == add(P, Q))
 
 k = int(input("Enter scalar k: "))
 R = mul(k, G)
-print(f"{k}G =", R, "| on curve:", on_curve(R))
+print("k * G =", R, " on curve:", on_curve(R))

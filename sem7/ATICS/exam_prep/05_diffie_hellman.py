@@ -126,7 +126,7 @@ A = pow(g, a, p)
 B = pow(g, b, p)
 print("Public: p =", p, " g =", g)
 print("Alice: private a =", a, " public A =", A)
-print("Bob  : private b =", b, " public B =", B)
+print("Bob : private b =", b, " public B =", B)
 
 # SHARED key - dono apni private key + doosre ki public key se banate hain:
 #   Alice: K = B^a = (g^b)^a = g^(ab) mod p
@@ -135,7 +135,7 @@ print("Bob  : private b =", b, " public B =", B)
 K_A = pow(B, a, p)
 K_B = pow(A, b, p)
 print("Alice's shared key:", K_A)
-print("Bob's shared key  :", K_B)
+print("Bob's shared key:", K_B)
 print("Keys match:", K_A == K_B)    # hamesha True
 
 
@@ -153,10 +153,10 @@ A = pow(g, a, p)
 B = pow(g, b, p)
 print("Public: p =", p, " g =", g)
 print("Alice: private a =", a, " public A =", A)
-print("Bob  : private b =", b, " public B =", B)
+print("Bob : private b =", b, " public B =", B)
 
 K_A = pow(B, a, p)
 K_B = pow(A, b, p)
 print("Alice's shared key:", K_A)
-print("Bob's shared key  :", K_B)
+print("Bob's shared key:", K_B)
 print("Keys match:", K_A == K_B)

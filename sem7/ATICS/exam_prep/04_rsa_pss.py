@@ -188,70 +188,86 @@ def H(b):
 
 
 # MGF1 = Mask Generation Function: chhote seed se KITNE BHI bytes ka "mask" banata hai.
-#   seed + counter (0, 1, 2, ...) ko hash karte jao aur jodte jao, phir l bytes pe kaato.
-#   i.to_bytes(4, 'big') -> integer i ko 4 bytes mein likho, 'big' = bada byte pehle
-#                           (big-endian), jaise 1 -> b'\x00\x00\x00\x01'
-#   b''.join(list_of_bytes) -> saare bytes ek saath jod do
-#   range(l // 32 + 1) -> har hash 32 bytes deta hai, toh itne blocks chahiye
-#   [:l] -> extra bytes kaat do, exactly l bytes return
-def mgf1(seed, l):
-    return b''.join(H(seed + i.to_bytes(4, 'big')) for i in range(l // 32 + 1))[:l]
+#   Idea: seed + counter (0, 1, 2, ...) ko hash karte jao aur output mein jodte jao,
+#   jab tak output kam se kam `length` bytes ka na ho jaaye. Har hash 32 bytes deta hai.
+def mgf1(seed, length):
+    output = b''                             # b'' = khaali bytes object (string ka bytes version)
+    counter = 0
+    while len(output) < length:              # jab tak abhi bhi bytes kam hain
+        # counter.to_bytes(4, 'big') -> integer ko exactly 4 bytes mein likho,
+        #   'big' = bada byte pehle (big-endian). Jaise 1 -> b'\x00\x00\x00\x01'
+        output += H(seed + counter.to_bytes(4, 'big'))   # bytes + bytes = jod do
+        counter += 1
+    return output[:length]                   # [:length] -> extra bytes kaat do, exactly length bytes
 
 
-# Do byte-strings ka byte-by-byte XOR.
-#   zip(a, b) -> dono se ek-ek element ki jodi: (a[0], b[0]), (a[1], b[1]), ...
-#                chhoti wali length pe ruk jaata hai
-#   x ^ y     -> bitwise XOR of two ints (0-255)
-#   bytes([...]) / bytes(generator) -> ints (0-255) ki list se bytes object banata hai
+# Do byte-strings ka byte-by-byte XOR (dono same length ke hone chahiye).
 def xor(a, b):
-    return bytes(x ^ y for x, y in zip(a, b))
+    result = b''
+    for i in range(len(a)):
+        # a[i] -> bytes object pe indexing ek INT (0-255) deta hai, jaise b'AB'[0] = 65
+        # ^     -> bitwise XOR of two ints: 1 jahan bits alag, 0 jahan same
+        # bytes([x]) -> ek int ki list se 1-byte bytes object banata hai: bytes([65]) = b'A'
+        result += bytes([a[i] ^ b[i]])
+    return result
 
 
 # RSA keys banao. e=65537 default argument (sabse common public exponent).
 def keygen(e=65537):
     while True:                              # jab tak achhi key na mile, retry
-        p, q = randprime(3 * 2**510, 2**512), randprime(3 * 2**510, 2**512)
+        p = randprime(3 * 2**510, 2**512)    # 512-bit prime
+        q = randprime(3 * 2**510, 2**512)    # doosra 512-bit prime
         phi = (p - 1) * (q - 1)
         # Edge cases: p == q nahi hona chahiye; e ka inverse tabhi exist karta hai
         # jab gcd(e, phi) = 1. e prime hai, toh bas check karo phi e se divisible na ho.
         if p != q and phi % e != 0:
             # pow(e, -1, phi) -> e ka modular inverse = d (Python 3.8+ built-in)
-            return e, pow(e, -1, phi), p * q     # (e, d, n)
+            d = pow(e, -1, phi)
+            n = p * q
+            return e, d, n
 
 
 # SIGN = EMSA-PSS-ENCODE + RSA private key operation.
 #   Layout yaad rakho (K = 128 bytes):
-#   EM = [ maskedDB (K-33 = 95 bytes) | h (32 bytes) | 0xbc (1 byte) ]
-#   DB = [ 62 zero bytes (K-66) | 0x01 | salt (32 bytes) ]          -> 95 bytes
+#   DB = [ PS: 62 zero bytes (K-66) | 0x01 | salt (32 bytes) ]          -> 95 bytes (K-33)
+#   EM = [ maskedDB (95 bytes) | h (32 bytes) | 0xbc (1 byte) ]         -> 128 bytes (K)
 def sign(m, d, n):
     salt = os.urandom(32)                    # har baar naya random salt -> PROBABILISTIC
+    m_hash = H(m)                            # message ka hash (32 bytes)
     # bytes(8) -> 8 zero bytes b'\x00' * 8. Standard (RFC 8017) yahi bolta hai:
-    # M' = 8 zeros || H(m) || salt  ->  h = H(M')
-    h = H(bytes(8) + H(m) + salt)
-    # DB banao aur use MGF1(h) se mask karo (XOR). Isse salt chhup jaata hai.
-    db = xor(bytes(K - 66) + b'\x01' + salt, mgf1(h, K - 33))
-    # db[0] & 0x7F -> pehle byte ka top bit 0 kar do (0x7F = 0111 1111).
+    # M' = 8 zeros || mHash || salt  ->  h = H(M')
+    m_dash = bytes(8) + m_hash + salt
+    h = H(m_dash)
+    ps = bytes(K - 66)                       # padding string: 62 zero bytes
+    db = ps + b'\x01' + salt                 # 0x01 = separator, padding kahan khatam hai batata hai
+    masked_db = xor(db, mgf1(h, K - 33))     # DB ko MGF1(h) se mask karo -> salt chhup jaata hai
+    # Pehle byte ka top bit 0 karo: & 0x7F (0x7F = 0111 1111, top bit hat jaata hai).
     #   Taaki EM ka integer n se chhota rahe (warna mod n mein info kho jaayegi).
-    # bytes([x]) -> ek int ko 1-byte bytes object banata hai. db[1:] = baaki bytes.
-    em = bytes([db[0] & 0x7F]) + db[1:] + h + b'\xbc'   # 0xbc = fixed trailer byte
+    #   masked_db[0] -> pehla byte as INT, bytes([...]) se wapas 1-byte bytes banaya.
+    first_byte = masked_db[0] & 0x7F
+    masked_db = bytes([first_byte]) + masked_db[1:]      # [1:] = pehle byte ke baad sab
+    em = masked_db + h + b'\xbc'             # 0xbc = fixed trailer byte (last byte)
     # int.from_bytes(em, 'big') -> 128 bytes ko ek bada integer bana do (big-endian)
-    # phir RSA sign: s = EM^d mod n  (PRIVATE key d se)
-    return pow(int.from_bytes(em, 'big'), d, n)
+    em_int = int.from_bytes(em, 'big')
+    return pow(em_int, d, n)                 # RSA sign: s = EM^d mod n  (PRIVATE key d se)
 
 
-# VERIFY = RSA public key operation + EMSA-PSS-VERIFY (sign ka ulta).
+# VERIFY = RSA public key operation + EMSA-PSS-VERIFY (sign ka bilkul ulta).
 def verify(m, s, e, n):
-    # s^e mod n se EM wapas milta hai (PUBLIC key se). .to_bytes(K, 'big') ->
-    # integer ko exactly 128 bytes mein likho (aage zeros pad ho jaate hain).
-    em = pow(s, e, n).to_bytes(K, 'big')
+    em_int = pow(s, e, n)                    # s^e mod n = EM wapas (PUBLIC key se)
+    # .to_bytes(K, 'big') -> integer ko exactly 128 bytes mein likho (aage zeros pad ho jaate hain)
+    em = em_int.to_bytes(K, 'big')
     if em[-1] != 0xbc:                       # em[-1] = last byte. Trailer galat -> reject
         return False
-    h = em[K - 33:-1]                        # slicing: index 95 se last byte se pehle tak = 32-byte h
-    db = xor(em[:K - 33], mgf1(h, K - 33))   # maskedDB XOR MGF1(h) = DB wapas (XOR ka ulta XOR)
+    masked_db = em[:K - 33]                  # pehle 95 bytes
+    h = em[K - 33:K - 1]                     # index 95 se 126 tak = 32-byte h (trailer se pehle)
+    db = xor(masked_db, mgf1(h, K - 33))     # XOR dobara lagao -> mask hat jaata hai, DB wapas
+    if db[K - 66] != 1:                      # 62 zeros ke baad wala byte 0x01 hona chahiye
+        return False
     salt = db[-32:]                          # DB ke last 32 bytes = salt
-    # db[K-66] = 62 zeros ke baad wala byte, 0x01 hona chahiye (separator).
-    # Phir salt se h dobara banao; signer wale h se match -> message same hai.
-    return db[K - 66] == 1 and H(bytes(8) + H(m) + salt) == h
+    # Signer ki tarah h dobara banao; match hua -> message wahi hai jo sign hua tha.
+    m_dash = bytes(8) + H(m) + salt
+    return H(m_dash) == h
 
 
 # --- Main -------------------------------------------------------------
@@ -260,14 +276,14 @@ e, d, n = keygen()
 #   .encode() -> string ko bytes banata hai (UTF-8), kyunki hash ko bytes chahiye.
 message = "Hello Bob".encode()
 sig = sign(message, d, n)
-# hex(sig) -> '0x....' string; [2:66] -> '0x' hata ke pehle 64 hex chars dikhao
-print("Signature:", hex(sig)[2:66], "...")
-print("Verified :", verify(message, sig, e, n))      # True
+# sig ek bahut bada integer hai (~300 digits) - seedha print, lamba dikhega, koi baat nahi
+print("Signature:", sig)
+print("Verified:", verify(message, sig, e, n))      # True
 
 tampered = message + b"!"                             # message mein ek char badla
 # .decode() -> bytes wapas string (sirf print karne ke liye)
 print("\nModified message:", tampered.decode())
-print("Verified :", verify(tampered, sig, e, n))     # False -> forgery/badlaav pakda gaya
+print("Verified:", verify(tampered, sig, e, n))     # False -> forgery/badlaav pakda gaya
 
 
 # =====================================================================
@@ -285,46 +301,69 @@ def H(b):
     return hashlib.sha256(b).digest()
 
 
-def mgf1(seed, l):
-    return b''.join(H(seed + i.to_bytes(4, 'big')) for i in range(l // 32 + 1))[:l]
+def mgf1(seed, length):
+    output = b''
+    counter = 0
+    while len(output) < length:
+        output += H(seed + counter.to_bytes(4, 'big'))
+        counter += 1
+    return output[:length]
 
 
 def xor(a, b):
-    return bytes(x ^ y for x, y in zip(a, b))
+    result = b''
+    for i in range(len(a)):
+        result += bytes([a[i] ^ b[i]])
+    return result
 
 
 def keygen(e=65537):
     while True:
-        p, q = randprime(3 * 2**510, 2**512), randprime(3 * 2**510, 2**512)
+        p = randprime(3 * 2**510, 2**512)
+        q = randprime(3 * 2**510, 2**512)
         phi = (p - 1) * (q - 1)
         if p != q and phi % e != 0:
-            return e, pow(e, -1, phi), p * q
+            d = pow(e, -1, phi)
+            n = p * q
+            return e, d, n
 
 
 def sign(m, d, n):
     salt = os.urandom(32)
-    h = H(bytes(8) + H(m) + salt)
-    db = xor(bytes(K - 66) + b'\x01' + salt, mgf1(h, K - 33))
-    em = bytes([db[0] & 0x7F]) + db[1:] + h + b'\xbc'
-    return pow(int.from_bytes(em, 'big'), d, n)
+    m_hash = H(m)
+    m_dash = bytes(8) + m_hash + salt
+    h = H(m_dash)
+    ps = bytes(K - 66)
+    db = ps + b'\x01' + salt
+    masked_db = xor(db, mgf1(h, K - 33))
+    first_byte = masked_db[0] & 0x7F
+    masked_db = bytes([first_byte]) + masked_db[1:]
+    em = masked_db + h + b'\xbc'
+    em_int = int.from_bytes(em, 'big')
+    return pow(em_int, d, n)
 
 
 def verify(m, s, e, n):
-    em = pow(s, e, n).to_bytes(K, 'big')
+    em_int = pow(s, e, n)
+    em = em_int.to_bytes(K, 'big')
     if em[-1] != 0xbc:
         return False
-    h = em[K - 33:-1]
-    db = xor(em[:K - 33], mgf1(h, K - 33))
+    masked_db = em[:K - 33]
+    h = em[K - 33:K - 1]
+    db = xor(masked_db, mgf1(h, K - 33))
+    if db[K - 66] != 1:
+        return False
     salt = db[-32:]
-    return db[K - 66] == 1 and H(bytes(8) + H(m) + salt) == h
+    m_dash = bytes(8) + H(m) + salt
+    return H(m_dash) == h
 
 
 e, d, n = keygen()
 message = input("Enter a message to sign: ").encode()
 sig = sign(message, d, n)
-print("Signature:", hex(sig)[2:66], "...")
-print("Verified :", verify(message, sig, e, n))
+print("Signature:", sig)
+print("Verified:", verify(message, sig, e, n))
 
 tampered = message + b"!"
 print("\nModified message:", tampered.decode())
-print("Verified :", verify(tampered, sig, e, n))
+print("Verified:", verify(tampered, sig, e, n))

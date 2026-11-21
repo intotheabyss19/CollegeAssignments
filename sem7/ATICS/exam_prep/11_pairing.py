@@ -122,18 +122,18 @@ b = 9
 # X = aP, Y = bP  (G1 mein points). Tuple unpacking: X = 5*7 % 1019 = 35, Y = 63
 X, Y = a * P % q, b * P % q
 print("aP =", X, " bP =", Y)
-print("e(P, P)      =", e(P, P))                   # g^(P*P) = 4^49 mod 2039
-print("e(aP, bP)    =", e(X, Y))                   # left side
+print("e(P, P) =", e(P, P))                   # g^(P*P) = 4^49 mod 2039
+print("e(aP, bP) =", e(X, Y))                   # left side
 print("e(P, P)^(ab) =", pow(e(P, P), a * b, p))    # right side -> dono same aane chahiye
 
 # --- Properties check (har line True deni chahiye) -----------------------
 # 1. Bilinear: e(aP, bP) == e(P, P)^(ab)   -> scalars a, b exponent mein bahar aa jaate hain
-print("Bilinear      :", e(X, Y) == pow(e(P, P), a * b, p))
+print("Bilinear:", e(X, Y) == pow(e(P, P), a * b, p))
 # 2. Additive (linear in first argument): e(X + Y, P) == e(X, P) * e(Y, P)
 #    G1 mein addition (X + Y) % q  ->  GT mein multiplication (... * ...) % p ban jaata hai
-print("Additive      :", e((X + Y) % q, P) == e(X, P) * e(Y, P) % p)
+print("Additive:", e((X + Y) % q, P) == e(X, P) * e(Y, P) % p)
 # 3. Symmetric: e(X, Y) == e(Y, X)  -> X*Y = Y*X, toh order se farak nahi padta
-print("Symmetric     :", e(X, Y) == e(Y, X))
+print("Symmetric:", e(X, Y) == e(Y, X))
 # 4. Non-degenerate: e(P, P) != 1  -> warna har pairing 1 aata, pairing bekaar hoti
 print("Non-degenerate:", e(P, P) != 1)
 
@@ -154,11 +154,11 @@ a = int(input("Enter a: "))
 b = int(input("Enter b: "))
 X, Y = a * P % q, b * P % q
 print("aP =", X, " bP =", Y)
-print("e(P, P)      =", e(P, P))
-print("e(aP, bP)    =", e(X, Y))
+print("e(P, P) =", e(P, P))
+print("e(aP, bP) =", e(X, Y))
 print("e(P, P)^(ab) =", pow(e(P, P), a * b, p))
 
-print("Bilinear      :", e(X, Y) == pow(e(P, P), a * b, p))
-print("Additive      :", e((X + Y) % q, P) == e(X, P) * e(Y, P) % p)
-print("Symmetric     :", e(X, Y) == e(Y, X))
+print("Bilinear:", e(X, Y) == pow(e(P, P), a * b, p))
+print("Additive:", e((X + Y) % q, P) == e(X, P) * e(Y, P) % p)
+print("Symmetric:", e(X, Y) == e(Y, X))
 print("Non-degenerate:", e(P, P) != 1)
