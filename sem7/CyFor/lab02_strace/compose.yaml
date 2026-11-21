@@ -1,0 +1,16 @@
+# Usage (from this folder):
+#   docker compose build
+#   docker compose run --rm lab02 ./scripts/run_all.sh     # every step, traces -> output/
+#   docker compose run --rm lab02                          # interactive shell to experiment
+name: cyfor-lab02
+services:
+  lab02:
+    build: .
+    image: cyfor/strace-lab
+    hostname: yash-cyfor-lab02
+    cap_add: [SYS_PTRACE]                # ptrace is blocked in containers by default
+    security_opt: ["seccomp=unconfined"] # let strace use every syscall it needs
+    volumes:
+      - ./samples:/lab/samples:ro
+      - ./scripts:/lab/scripts:ro
+      - ./output:/lab/output

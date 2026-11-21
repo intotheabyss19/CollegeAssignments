@@ -1,0 +1,89 @@
+# Isolated scanning range: an attacker box plus a handful of deliberately weak services on a
+# private bridge network (10.10.30.0/24). Nothing here touches your real LAN or college Wi-Fi.
+#
+#   docker compose up -d --build                  # start the range
+#   docker compose exec attacker bash             # get a shell on the attacker box
+#   docker compose exec attacker /lab/scripts/scans.sh       # steps 3-5  (nmap)
+#   docker compose exec attacker /lab/scripts/traffic.sh     # normal + cleartext-credential traffic
+#   docker compose exec attacker /lab/scripts/anomalies.sh   # step 9 (scan / flood traffic)
+#   docker compose exec attacker /lab/scripts/analyze_pcap.sh captures/<file>.pcap
+#   docker compose down                           # stop and remove everything
+#
+# Optional heavyweight target (≈1.5 GB, x86 emulated): docker compose --profile msf2 up -d
+name: cyfor-lab03
+
+x-target: &target
+  build: ./targets
+  image: cyfor/lab03-targets
+  env_file: .env
+  restart: unless-stopped
+
+services:
+  attacker:
+    build: ./attacker
+    image: cyfor/lab03-attacker
+    hostname: yash-cyfor-attacker
+    cap_add: [NET_ADMIN, NET_RAW]     # raw sockets for SYN/OS scans and packet capture
+    env_file: .env
+    dns: [10.10.30.53]
+    dns_search: [lab]
+    networks: { range: { ipv4_address: 10.10.30.10 } }
+    volumes:
+      - ./scripts:/lab/scripts:ro
+      - ./captures:/lab/captures
+      - ../evidence:/evidence:ro      # case001.pcap for the Wireshark/tshark part
+    working_dir: /lab
+    command: sleep infinity
+
+  web:
+    image: nginx:1.27-alpine
+    hostname: web
+    networks: { range: { ipv4_address: 10.10.30.20 } }
+    volumes:
+      - ./targets/web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./targets/web/html:/usr/share/nginx/html:ro
+      - ./targets/web/htpasswd:/etc/nginx/htpasswd:ro
+
+  ftp:
+    <<: *target
+    hostname: ftp
+    command: ["/opt/svc/ftp.sh"]
+    networks: { range: { ipv4_address: 10.10.30.21 } }
+
+  telnet:
+    <<: *target
+    hostname: telnet
+    command: ["/opt/svc/telnet.sh"]
+    networks: { range: { ipv4_address: 10.10.30.22 } }
+
+  ssh:
+    <<: *target
+    hostname: ssh
+    command: ["/opt/svc/ssh.sh"]
+    networks: { range: { ipv4_address: 10.10.30.23 } }
+
+  dns:
+    <<: *target
+    hostname: dns
+    command: ["/opt/svc/dns.sh"]
+    networks: { range: { ipv4_address: 10.10.30.53 } }
+
+  cache:
+    image: redis:7-alpine
+    hostname: cache
+    command: ["redis-server", "--protected-mode", "no"]   # unauthenticated on purpose
+    networks: { range: { ipv4_address: 10.10.30.24 } }
+
+  msf2:
+    profiles: [msf2]
+    image: tleemcjr/metasploitable2
+    platform: linux/amd64
+    hostname: metasploitable
+    command: ["sh", "-c", "/bin/services.sh && tail -f /dev/null"]
+    networks: { range: { ipv4_address: 10.10.30.100 } }
+
+networks:
+  range:
+    driver: bridge
+    ipam:
+      config: [{ subnet: 10.10.30.0/24 }]

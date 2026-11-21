@@ -1,0 +1,18 @@
+# Usage (from this folder):
+#   docker compose build
+#   docker compose run --rm vol -f /evidence/case001/DC01-memory/citadeldc01.mem windows.info
+#   docker compose run --rm --entrypoint /opt/lab/analyze.sh vol      # full step 2-7 run -> output/
+name: cyfor-lab01
+services:
+  vol:
+    build: .
+    image: cyfor/volatility3:2.28.2
+    hostname: yash-cyfor-lab01
+    volumes:
+      - ../evidence:/evidence:ro          # evidence is never writable from the analysis box
+      - ./output:/output
+      - vol3-cache:/root/.cache/volatility3
+    environment:
+      MEMIMG: ${MEMIMG:-}                 # optional override of the memory image path
+volumes:
+  vol3-cache:

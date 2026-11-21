@@ -1,0 +1,67 @@
+# Lab 09 - hand-written Snort 3 rules (SID 1000000+ is the range reserved for local rules).
+#
+# Anatomy:  ACTION PROTO SRC SPORT DIR DST DPORT ( OPTION; OPTION; ... sid:N; rev:N; )
+#   action   alert | log | pass | drop | block | reject     (drop/block only bite in inline/IPS mode)
+#   proto    ip | icmp | tcp | udp  - or a SERVICE (http, dns, ftp...) so Snort matches it on any port
+#   options  msg / flow (direction + state) / content (byte match) / sticky buffers (http_uri, file_data
+#            ...) that say WHERE to look / pcre / thresholds / classtype / sid + rev (identity, version)
+
+# --- 1. Recon --------------------------------------------------------------------------------------
+# ICMP echo request (type 8) from outside: the "hello world" of IDS rules.
+alert icmp $EXTERNAL_NET any -> $HOME_NET any ( msg:"LAB RECON ICMP echo request to DMZ"; itype:8; classtype:misc-activity; sid:1000001; rev:1; )
+
+# A bare SYN to many ports is a scan; detection_filter only alerts after 20 SYNs from one source in 5 s.
+alert tcp $EXTERNAL_NET any -> $HOME_NET any ( msg:"LAB RECON burst of TCP SYNs from one source (port scan)"; flags:S; detection_filter:track by_src, count 20, seconds 5; classtype:attempted-recon; sid:1000002; rev:1; )
+
+# --- 2. Web attacks (http_inspect parses HTTP; these sticky buffers point at the parsed fields) ------
+# Scanner/attack-tool User-Agents. http_header:field user-agent = only the value of that one header.
+alert http $EXTERNAL_NET any -> $HOME_NET any ( msg:"LAB WEB attack tool User-Agent (Nikto/sqlmap/Nmap/Hydra)"; flow:to_server,established; http_header:field user-agent; pcre:"/nikto|sqlmap|nmap|hydra/i"; classtype:web-application-activity; sid:1000010; rev:1; )
+
+# Directory traversal. http_raw_uri = the URI exactly as sent. (In http_uri Snort has already
+# NORMALISED "/a/../b" into "/b" - the evidence of the attack is gone from that buffer.)
+alert http $EXTERNAL_NET any -> $HOME_NET any ( msg:"LAB WEB directory traversal ../ in raw URI"; flow:to_server,established; http_raw_uri; content:"../"; classtype:web-application-attack; sid:1000011; rev:1; )
+
+# Same attack, but percent-encoded (%2e%2e%2f). Normalisation decodes it, so match the decoded http_uri.
+alert http $EXTERNAL_NET any -> $HOME_NET any ( msg:"LAB WEB encoded directory traversal reaching /etc/passwd"; flow:to_server,established; http_uri; content:"/etc/passwd"; classtype:web-application-attack; sid:1000012; rev:1; )
+
+# SQL injection. Cheap content match first (fast pattern), expensive regex only if it hits.
+alert http $EXTERNAL_NET any -> $HOME_NET any ( msg:"LAB WEB SQL injection UNION SELECT"; flow:to_server,established; http_uri; content:"union",nocase,fast_pattern; pcre:"/union\s+(all\s+)?select/i"; classtype:web-application-attack; sid:1000013; rev:1; )
+alert http $EXTERNAL_NET any -> $HOME_NET any ( msg:"LAB WEB SQL injection tautology (' OR 1=1)"; flow:to_server,established; http_uri; content:"'"; pcre:"/'\s*or\s+'?(\d+)'?\s*=\s*'?\1/i"; classtype:web-application-attack; sid:1000014; rev:1; )
+
+# Shellshock (CVE-2014-6271): bash function definition smuggled in a header.
+# 'block' = drop this packet and the rest of the flow. In passive IDS mode it is reported as would_block.
+block http $EXTERNAL_NET any -> $HOME_NET any ( msg:"LAB WEB Shellshock function definition in header"; flow:to_server,established; http_header; content:"() {",fast_pattern; classtype:attempted-admin; sid:1000015; rev:1; )
+
+# Log4Shell (CVE-2021-44228) JNDI lookup string anywhere in the headers.
+alert http $EXTERNAL_NET any -> $HOME_NET any ( msg:"LAB WEB Log4Shell JNDI lookup in header"; flow:to_server,established; http_header; content:"${jndi:",nocase; classtype:attempted-admin; sid:1000016; rev:1; )
+
+# --- 3. Credentials ----------------------------------------------------------------------------------
+# FTP sends the password in cleartext. Policy violation on its own, whoever sends it.
+alert tcp any any -> $HOME_NET 21 ( msg:"LAB POLICY FTP password sent in cleartext"; flow:to_server,established; content:"PASS ",depth 5; classtype:policy-violation; sid:1000020; rev:1; )
+
+# FTP brute force: count the server's "530 Login incorrect" replies (by destination = the guesser).
+alert tcp $HOME_NET 21 -> any any ( msg:"LAB BRUTEFORCE FTP 5+ failed logins in 30 s"; flow:to_client,established; content:"530 ",depth 4; detection_filter:track by_dst, count 5, seconds 30; classtype:unsuccessful-user; sid:1000021; rev:1; )
+
+# SSH is encrypted: no password to see. All we can count is NEW connections (SYNs) to port 22.
+alert tcp $EXTERNAL_NET any -> $HOME_NET 22 ( msg:"LAB BRUTEFORCE SSH 10+ connections in 60 s"; flags:S; detection_filter:track by_src, count 10, seconds 60; classtype:attempted-user; sid:1000022; rev:1; )
+
+# HTTP Basic auth failures (401) to one client.
+alert http $HOME_NET any -> any any ( msg:"LAB BRUTEFORCE HTTP Basic auth 5+ failures in 30 s"; flow:to_client,established; http_stat_code; content:"401"; detection_filter:track by_dst, count 5, seconds 30; classtype:unsuccessful-user; sid:1000023; rev:1; )
+
+# --- 4. Malware delivery & C2 ------------------------------------------------------------------------
+# DNS lookup for the attacker's domain. DNS wire format stores names as length-prefixed labels:
+# "evil-cdn.lab" travels as |08|evil-cdn|03|lab|00|.
+alert udp $HOME_NET any -> any 53 ( msg:"LAB IOC DNS lookup of known C2 domain evil-cdn.lab"; content:"|08|evil-cdn|03|lab|00|",nocase; classtype:trojan-activity; sid:1000030; rev:1; )
+
+# A Windows executable coming INTO the DMZ over HTTP. file_data = the decoded response body.
+alert http $EXTERNAL_NET any -> $HOME_NET any ( msg:"LAB MALWARE Windows PE executable downloaded over HTTP"; flow:to_client,established; file_data; content:"MZ",depth 2; content:"PE|00 00|",distance 0; classtype:trojan-activity; sid:1000031; rev:1; )
+
+# EICAR anti-virus test string (harmless, universally used to test AV/IDS pipelines).
+alert tcp any any -> any any ( msg:"LAB MALWARE EICAR test string in transfer"; flow:established; content:"EICAR-STANDARD-ANTIVIRUS-TEST-FILE",fast_pattern; classtype:trojan-activity; sid:1000032; rev:1; )
+
+# C2 beacon. Matches EVERY beacon; the event_filter in lab.lua limits it to one alert per minute
+# (otherwise: alert fatigue). Note Snort cannot see the REGULAR TIMING - that is Zeek's job.
+alert http $HOME_NET any -> $EXTERNAL_NET any ( msg:"LAB C2 beacon check-in /beacon?id="; flow:to_server,established; http_uri; content:"/beacon?id=",fast_pattern; classtype:trojan-activity; sid:1000033; rev:1; )
+
+# DNS tunnelling / exfil: an unusually large query packet, repeatedly.
+alert udp $HOME_NET any -> any 53 ( msg:"LAB EXFIL long DNS queries (possible DNS tunnelling)"; dsize:>90; detection_filter:track by_src, count 5, seconds 60; classtype:policy-violation; sid:1000034; rev:1; )

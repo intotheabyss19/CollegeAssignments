@@ -1,0 +1,44 @@
+# Lab 04 - network forensics with BruteShark + live response with Live-Forensicator.
+#
+#   docker compose up -d --build                         # victim + attacker C2 start; IOCs get planted
+#   docker compose exec c2 /lab/attack.sh                # brute force, web attacks, webshell use
+#   docker compose exec victim /lab/collect.sh           # Live-Forensicator triage (+60 s pcap) -> output/
+#   docker compose run --rm bruteshark                   # BruteShark on every pcap it can find -> output/bruteshark/
+#   docker compose down
+name: cyfor-lab04
+
+services:
+  victim:
+    build: ./victim
+    image: cyfor/lab04-victim
+    hostname: web-prod-01                 # Live-Forensicator names its output folder after this
+    cap_add: [NET_ADMIN, NET_RAW, SYS_PTRACE]
+    networks: { net: { ipv4_address: 10.10.40.20 } }
+    volumes:
+      - ./scripts/collect.sh:/lab/collect.sh:ro
+      - ./output:/output
+
+  c2:
+    image: alpine:3.20
+    hostname: c2
+    networks: { net: { ipv4_address: 10.10.40.66 } }
+    volumes: ["./scripts/attack.sh:/lab/attack.sh:ro"]
+    # holds the victim's reverse shell open and stays around to run attack.sh from
+    command: ["sh", "-c", "apk add --no-cache socat curl openssh-client sshpass >/dev/null && exec socat TCP-LISTEN:4444,reuseaddr,fork SYSTEM:'sleep infinity'"]
+
+  bruteshark:
+    profiles: [tools]                     # only runs on demand (docker compose run)
+    build: ./bruteshark
+    image: cyfor/bruteshark:1.2.5
+    platform: linux/amd64                 # upstream only ships an x86-64 Linux build (runs under emulation)
+    volumes:
+      - ../lab03_network/captures:/pcaps/lab03:ro
+      - ../evidence/case001/case001-pcap:/pcaps/case001:ro
+      - ./output/live_forensicator:/pcaps/live_forensicator:ro
+      - ./output:/output
+    entrypoint: ["/opt/run_bruteshark.sh"]
+
+networks:
+  net:
+    ipam:
+      config: [{ subnet: 10.10.40.0/24 }]

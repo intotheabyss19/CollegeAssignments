@@ -1,0 +1,48 @@
+# ---------------------------------------------------------------------
+# CyFor: only lab scripts and setup files are public.
+# Reports, notebooks, captures, outputs, presentation and evidence
+# contain device data (hostname, paths, MACs, IPs) and stay local.
+# ---------------------------------------------------------------------
+CyFor/**
+!CyFor/**/
+!CyFor/**/*.py
+!CyFor/**/*.sh
+!CyFor/**/Dockerfile*
+!CyFor/**/docker-compose*.yml
+!CyFor/**/docker-compose*.yaml
+!CyFor/**/compose*.yml
+!CyFor/**/compose*.yaml
+!CyFor/**/*.rules
+!CyFor/**/*.yar
+!CyFor/**/*.yara
+!CyFor/**/*.conf
+!CyFor/**/requirements*.txt
+
+# ...but never anything inside these folders
+CyFor/reports/
+CyFor/evidence/
+CyFor/docs/
+CyFor/presentation_antiforensics/
+CyFor/quiz-sample-qs/
+CyFor/CyFor
+CyFor/**/output/
+CyFor/**/outputs/
+CyFor/**/captures/
+CyFor/**/pcaps/
+CyFor/lab01_volatility/community-plugins/
+CyFor/lab09_ids_nmap_snort_bro/rules/et-open/
+
+# Python / Node environments and caches
+.venv/
+node_modules/
+__pycache__/
+*.pyc
+.DS_Store
+
+# Local env files with (lab) credentials
+.env
+
+# IOT: reports, PDFs and write-ups stay local (only code is public)
+IOT/**/*.docx
+IOT/**/*.pdf
+IOT/homeassignment/deliverables/*.md

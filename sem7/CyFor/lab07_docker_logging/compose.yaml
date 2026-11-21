@@ -1,0 +1,135 @@
+# Lab 07 - Docker container log collection.
+#
+#   docker compose up -d --build        # everything (Elasticsearch + Kibana take ~1 min to be ready)
+#   open http://localhost:5601          # Kibana -> Discover -> data view "docker-logs-*"
+#   ./scripts/inspect_logging.sh        # steps 1-6: which driver/options each container uses, rotation on disk
+#   ./scripts/incidents.sh              # steps 11-12: crash, OOM kill, error burst, CPU contention
+#   docker compose down -v              # remove everything incl. stored logs
+#
+# The logging drivers run inside the Docker daemon, not inside your containers, so they reach
+# fluentd/syslog through ports published on localhost - not through the compose network.
+name: cyfor-lab07
+
+x-json-rotated: &json-rotated        # step 4/9: json-file with rotation + retention
+  driver: json-file
+  options:
+    max-size: "200k"                 # rotate after 200 KB...
+    max-file: "3"                    # ...keep 3 files (≈600 KB max per container)
+    compress: "true"                 # gzip rotated files
+    tag: "{{.Name}}"
+
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.0
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"     # lab only - never do this in production
+      ES_JAVA_OPTS: -Xms1g -Xmx1g
+    volumes: [es-data:/usr/share/elasticsearch/data]
+    ports: ["127.0.0.1:9200:9200"]
+    logging: *json-rotated
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s >/dev/null"]
+      interval: 10s
+      retries: 30
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.17.0
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports: ["127.0.0.1:5601:5601"]
+    depends_on: { elasticsearch: { condition: service_healthy } }
+    logging: *json-rotated
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:5601/api/status | grep -q available"]
+      interval: 10s
+      retries: 30
+
+  fluentd:
+    build: ./fluentd
+    image: cyfor/lab07-fluentd
+    ports: ["127.0.0.1:24224:24224", "127.0.0.1:24224:24224/udp"]
+    volumes: ["./output/fluentd-archive:/fluentd/log/archive"]
+    depends_on: { elasticsearch: { condition: service_healthy } }
+    logging: *json-rotated
+
+  syslog:
+    build: ./syslog
+    image: cyfor/lab07-syslog
+    ports: ["127.0.0.1:5514:514"]
+    volumes: ["./output/syslog:/var/log/remote"]
+    logging: *json-rotated
+
+  # --- applications, each using a different logging driver -------------------------------
+  orders:                              # fluentd driver -> fluentd -> Elasticsearch -> Kibana
+    build: ./app
+    image: cyfor/lab07-app
+    hostname: orders
+    environment: { SERVICE_NAME: orders }
+    restart: unless-stopped
+    mem_limit: 96m                     # /leak will hit this -> OOM kill shows up in events/logs
+    memswap_limit: 96m                 # no swap, so the kernel OOM-kills instead of swapping
+    cpus: 0.5
+    depends_on: [fluentd]
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: localhost:24224
+        fluentd-async: "true"          # don't fail container start if fluentd is restarting
+        tag: docker.{{.Name}}
+
+  payments:                            # syslog driver -> rsyslog -> output/syslog/payments.log
+    build: ./app
+    image: cyfor/lab07-app
+    hostname: payments
+    environment: { SERVICE_NAME: payments }
+    restart: unless-stopped
+    depends_on: [syslog]
+    logging:
+      driver: syslog
+      options:
+        syslog-address: tcp://127.0.0.1:5514
+        syslog-format: rfc5424
+        tag: payments
+
+  inventory:                           # default json-file driver with rotation (docker logs works)
+    build: ./app
+    image: cyfor/lab07-app
+    hostname: inventory
+    environment: { SERVICE_NAME: inventory }
+    restart: unless-stopped
+    logging: *json-rotated
+
+  loadgen:                             # steady traffic so there is always something to look at
+    image: curlimages/curl:8.10.1
+    depends_on: [orders, payments, inventory]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          for s in orders payments inventory; do
+            curl -s -o /dev/null http://$$s:8080/api/orders
+            curl -s -o /dev/null http://$$s:8080/
+          done
+          [ $$((RANDOM % 10)) -eq 0 ] && curl -s -o /dev/null http://orders:8080/slow
+          [ $$((RANDOM % 15)) -eq 0 ] && curl -s -o /dev/null http://inventory:8080/nope
+          sleep 0.5
+        done
+    logging: *json-rotated
+
+  setup:                               # one-shot: retention policy, index template, Kibana data view
+    image: curlimages/curl:8.10.1
+    depends_on: { kibana: { condition: service_healthy } }
+    volumes: ["./scripts/setup_elk.sh:/setup_elk.sh:ro"]
+    entrypoint: ["/bin/sh", "/setup_elk.sh"]
+    restart: "no"
+
+  stress:                              # step 12: noisy neighbour for resource-contention demo
+    profiles: [stress]
+    image: alpine:3.20
+    cpus: 1.0
+    command: ["sh", "-c", "apk add --no-cache stress-ng >/dev/null && stress-ng --cpu 4 --vm 1 --vm-bytes 512M --timeout 90s --metrics-brief"]
+    logging: *json-rotated
+
+volumes:
+  es-data:

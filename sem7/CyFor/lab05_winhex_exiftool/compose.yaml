@@ -1,0 +1,16 @@
+# Usage (from this folder):
+#   docker compose build
+#   docker compose run --rm lab05 ./scripts/make_evidence_image.sh   # builds evidence/usb_evidence.img (+ hashes)
+#   docker compose run --rm lab05 ./scripts/exif_analysis.sh         # ExifTool steps 4, 5, 9 -> output/
+#   docker compose run --rm lab05 ./scripts/verify_image.sh          # hash check + Sleuth Kit cross-check
+# Then copy evidence/usb_evidence.img into the Windows VM for WinHex (and Autopsy in Lab 06).
+name: cyfor-lab05
+services:
+  lab05:
+    build: .
+    image: cyfor/lab05-tools
+    hostname: yash-cyfor-lab05
+    volumes:
+      - ./scripts:/lab/scripts:ro
+      - ./evidence:/lab/evidence
+      - ./output:/lab/output

@@ -1,0 +1,116 @@
+# Lab 09 - Intrusion detection & network forensics: Snort 3 and Zeek (formerly "Bro").
+#
+#   "internet" 203.0.113.0/24               fw (sensor point)            DMZ 10.10.90.0/24
+#   customer .30  attacker .66  c2 .99  ---- wan0 .254 | dmz0 .254 ---- web01 .20
+#   resolver .53 (DNS)                         snort + zeek sniff dmz0     (HTTP, FTP, SSH)
+#
+#   docker compose up -d --build            # hosts + live Snort + live Zeek
+#   scripts/scenario.sh                     # capture pcap while: normal use -> recon -> attacks -> C2
+#   tail -f output/live/snort/alert_fast.txt
+#   scripts/analyze.sh scenario             # offline Snort + Zeek -> output/scenario/
+#   docker compose --profile '*' down -v
+#
+# 203.0.113.0/24 is TEST-NET-3 (RFC 5737, documentation-only), so it can never be a real address.
+name: cyfor-lab09
+
+x-host: &host
+  build: ./hosts
+  image: cyfor/lab09-hosts
+  cap_add: [NET_ADMIN]                      # to add the route via the firewall
+  init: true
+
+x-sensor-volumes: &sensor-volumes
+  - ./snort:/lab/snort:ro
+  - ./zeek:/lab/zeek:ro
+  - ./rules:/lab/rules:ro
+  - ./output:/output
+  - ./pcaps:/pcaps
+
+services:
+  # ---------- network ----------
+  fw:
+    image: alpine:3.20
+    hostname: yash-cyfor-fw
+    cap_add: [NET_ADMIN, NET_RAW]
+    sysctls: { net.ipv4.ip_forward: 1 }     # plain router between DMZ and internet (no NAT)
+    networks:
+      dmz: { ipv4_address: 10.10.90.254, interface_name: dmz0 }
+      wan: { ipv4_address: 203.0.113.254, interface_name: wan0 }
+    command: sleep infinity
+    init: true
+
+  web01:
+    <<: *host
+    hostname: yash-cyfor-web01
+    command: [role, web01]
+    networks: { dmz: { ipv4_address: 10.10.90.20 } }
+  customer:
+    <<: *host
+    hostname: customer
+    command: [role, customer]
+    networks: { wan: { ipv4_address: 203.0.113.30 } }
+  attacker:
+    <<: *host
+    hostname: yash-cyfor-attacker
+    cap_add: [NET_ADMIN, NET_RAW]            # raw sockets for nmap SYN scans
+    command: [role, attacker]
+    networks: { wan: { ipv4_address: 203.0.113.66 } }
+  c2:
+    <<: *host
+    hostname: update-evil-cdn
+    command: [role, c2]
+    networks: { wan: { ipv4_address: 203.0.113.99 } }
+  resolver:
+    <<: *host
+    hostname: resolver
+    command: [role, resolver]
+    networks: { wan: { ipv4_address: 203.0.113.53 } }
+
+  # ---------- live sensors: share the firewall's network stack, listen on dmz0 ----------
+  snort:
+    build: ./snort
+    image: cyfor/lab09-snort:3.12.4.0
+    network_mode: service:fw
+    cap_add: [NET_ADMIN, NET_RAW]
+    volumes: *sensor-volumes
+    command: [/lab/snort/run.sh, live]
+  zeek:
+    image: zeek/zeek:8.0
+    network_mode: service:fw
+    cap_add: [NET_ADMIN, NET_RAW]
+    volumes: *sensor-volumes
+    command: [/lab/zeek/run.sh, live]
+  capture:                                   # full-packet capture (started/stopped by scenario.sh)
+    profiles: [capture]
+    image: cyfor/lab09-snort:3.12.4.0
+    network_mode: service:fw
+    cap_add: [NET_ADMIN, NET_RAW]
+    volumes: *sensor-volumes
+    command: [tcpdump, -i, dmz0, -U, -s, "0", -w, /pcaps/lab09_scenario.pcap]
+
+  # ---------- offline analysis: no network at all, evidence read-only ----------
+  snort-offline:
+    profiles: [offline]
+    image: cyfor/lab09-snort:3.12.4.0
+    network_mode: none
+    volumes: &offline-volumes
+      - ./snort:/lab/snort:ro
+      - ./zeek:/lab/zeek:ro
+      - ./rules:/lab/rules:ro
+      - ./output:/output
+      - ./pcaps:/pcaps:ro
+      - ../lab03_network/captures:/evidence/lab03:ro
+      - ../evidence/case001/case001-pcap:/evidence/case001:ro
+    entrypoint: [/lab/snort/run.sh]
+  zeek-offline:
+    profiles: [offline]
+    image: zeek/zeek:8.0
+    network_mode: none
+    volumes: *offline-volumes
+    entrypoint: [/lab/zeek/run.sh]
+
+networks:
+  dmz:
+    ipam: { config: [{ subnet: 10.10.90.0/24 }] }
+  wan:
+    ipam: { config: [{ subnet: 203.0.113.0/24 }] }
